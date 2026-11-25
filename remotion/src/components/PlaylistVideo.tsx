@@ -73,7 +73,12 @@ export const PlaylistVideo: React.FC<PlaylistVideoProps> = ({
   const segments = expandPlaylistSegments(playlist, fps);
 
   return (
-    <AbsoluteFill style={{ backgroundColor: '#000000' }}>
+    <AbsoluteFill
+      style={{
+        backgroundColor: '#000000',
+        translate: '1px 0px'
+      }}
+    >
       <TransitionSeries>
         {segments.map((seg, flatIdx) => (
           <React.Fragment

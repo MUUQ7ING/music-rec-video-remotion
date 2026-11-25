@@ -24,10 +24,18 @@ export interface DetectedBright {
   bottom?: boolean;
 }
 
+export interface LyricWord {
+  start: number;
+  end: number;
+  text: string;
+}
+
 export interface LyricLine {
   time: number;
+  end?: number;
   orig: string;
   trans?: string;
+  words?: LyricWord[];
 }
 
 export interface LyricsFile {
@@ -35,6 +43,7 @@ export interface LyricsFile {
   title?: string;
   artist?: string;
   has_translation?: boolean;
+  has_word_timing?: boolean;
   lines: LyricLine[];
 }
 

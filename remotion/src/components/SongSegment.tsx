@@ -197,8 +197,8 @@ export const SongSegment: React.FC<SongSegmentProps> = ({
   const marqueeOffset =
     isLongTitle && overflowPx > 0
       ? interpolate(
-          frame,
-          [Math.round(1.8 * fps), Math.max(Math.round(2.5 * fps), durationInFrames - Math.round(1.8 * fps))],
+          uiElapsed,
+          [Math.round(1.8 * fps), Math.max(Math.round(2.5 * fps), uiDuration - Math.round(1.8 * fps))],
           [0, -overflowPx],
           { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' },
         )
@@ -242,6 +242,8 @@ export const SongSegment: React.FC<SongSegmentProps> = ({
         audioSrc={videoUrl}
         startSec={startSec}
         coverUrl={coverUrl}
+        lyrics={lyrics}
+        currentMediaSec={currentMediaSec}
       >
         {videoUrl ? (
           <OffthreadVideo
@@ -438,8 +440,8 @@ export const SongSegment: React.FC<SongSegmentProps> = ({
           </div>
         </div>
 
-        {/* Bottom-right Bilingual Lyrics */}
-        {activeLyric ? (
+        {/* Bottom-right Bilingual Lyrics (hidden when lyric_stage already displays full scrolling lyrics) */}
+        {activeLyric && song.visual_effect !== 'lyric_stage' ? (
           <div
             style={{
               position: 'absolute',

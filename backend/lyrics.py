@@ -13,11 +13,13 @@ from pathlib import Path
 from typing import Callable
 
 from backend.download import slug
-from backend.netease import fetch_netease_lyrics, search_netease_song_id
+from backend.netease import fetch_netease_lyrics_full, search_netease_song_id
 from backend.preprocess import parse_time_str
 from backend.schema import PlaylistConfig, SongItem, load_playlist, save_playlist
 
 TIME_TAG_RE = re.compile(r"\[(\d{1,3}):(\d{2})(?:\.(\d{1,3}))?\]")
+YRC_LINE_RE = re.compile(r"^\[(\d+),(\d+)\](.*)$")
+YRC_WORD_RE = re.compile(r"\((\d+),(\d+),\d+\)(.*?)(?=\(\d+,\d+,\d+\)|$)")
 META_PREFIX_RE = re.compile(
     r"^(作词|作曲|编曲|制作人|混音|母带|录音|和声|吉他|贝斯|鼓|键盘|监制|词|曲|演唱|歌手|Lyrics|Composed|Arranged|Produced|Mixed|Mastered)\s*[:：]",
     re.IGNORECASE,
@@ -80,13 +82,93 @@ def merge_bilingual_lrc(orig_lrc: str, trans_lrc: str, tol_sec: float = 0.25) ->
     return merged
 
 
+def parse_yrc_lines(yrc_text: str) -> list[dict]:
+    """Parse NetEase YRC word-level lyric text into sorted line dicts with word timestamps."""
+    parsed: list[dict] = []
+    if not yrc_text:
+        return parsed
+
+    for raw_line in yrc_text.splitlines():
+        line = raw_line.strip()
+        if not line or not line.startswith("["):
+            continue
+        m = YRC_LINE_RE.match(line)
+        if not m:
+            continue
+        line_start_ms = int(m.group(1))
+        line_dur_ms = int(m.group(2))
+        body = m.group(3)
+
+        words: list[dict] = []
+        raw_parts: list[str] = []
+        for wm in YRC_WORD_RE.finditer(body):
+            w_start_ms = int(wm.group(1))
+            w_dur_ms = int(wm.group(2))
+            w_text = wm.group(3)
+            if not w_text:
+                continue
+            raw_parts.append(w_text)
+            words.append({
+                "start": round(w_start_ms / 1000.0, 3),
+                "end": round((w_start_ms + max(0, w_dur_ms)) / 1000.0, 3),
+                "text": w_text,
+            })
+
+        orig_text = "".join(raw_parts).strip()
+        if not orig_text or META_PREFIX_RE.match(orig_text):
+            continue
+
+        parsed.append({
+            "time": round(line_start_ms / 1000.0, 3),
+            "end": round((line_start_ms + max(0, line_dur_ms)) / 1000.0, 3),
+            "orig": orig_text,
+            "words": words,
+        })
+
+    parsed.sort(key=lambda x: x["time"])
+    return parsed
+
+
+def merge_bilingual_yrc(yrc_text: str, trans_lrc: str, tol_sec: float = 0.35) -> list[dict]:
+    """Pair YRC word-level lines with closest Chinese translation lines within tol_sec."""
+    yrc_lines = parse_yrc_lines(yrc_text)
+    if not yrc_lines:
+        return []
+
+    trans_lines = parse_lrc_lines(trans_lrc)
+    t_idx = 0
+    n_trans = len(trans_lines)
+    merged: list[dict] = []
+
+    for item in yrc_lines:
+        o_time = item["time"]
+        o_text = item["orig"]
+        matched_trans = ""
+        while t_idx < n_trans and trans_lines[t_idx][0] < o_time - tol_sec:
+            t_idx += 1
+        if t_idx < n_trans and abs(trans_lines[t_idx][0] - o_time) <= tol_sec:
+            cand = trans_lines[t_idx][1]
+            if cand and cand != o_text:
+                matched_trans = cand
+            t_idx += 1
+
+        merged.append({
+            "time": o_time,
+            "end": item["end"],
+            "orig": o_text,
+            "trans": matched_trans,
+            "words": item["words"],
+        })
+    return merged
+
+
 def fetch_and_save_lyrics(
     song: SongItem,
     project_root: Path,
     force: bool = False,
     log: Callable[[str], None] | None = None,
 ) -> Path | None:
-    """Fetch bilingual lyrics from NetEase for a song and persist to lyrics/<slug>.json."""
+    """Fetch bilingual lyrics (with YRC word-level timing if available) from NetEase."""
     out_dir = project_root / "lyrics"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{slug(song.title, song.artist)}.json"
@@ -106,8 +188,11 @@ def fetch_and_save_lyrics(
             log(f"[WARN] NetEase song ID not found for: {song.artist} - {song.title}")
         return None
 
-    orig_lrc, trans_lrc = fetch_netease_lyrics(sid)
-    lines = merge_bilingual_lrc(orig_lrc, trans_lrc)
+    orig_lrc, trans_lrc, yrc_lrc = fetch_netease_lyrics_full(sid)
+    lines = merge_bilingual_yrc(yrc_lrc, trans_lrc)
+    has_word_timing = bool(lines)
+    if not lines:
+        lines = merge_bilingual_lrc(orig_lrc, trans_lrc)
     if not lines:
         if log:
             log(f"[INFO] Instrumental or no timed lyrics: {song.title} (id={sid})")
@@ -118,13 +203,17 @@ def fetch_and_save_lyrics(
         "title": song.title,
         "artist": song.artist,
         "has_translation": any(bool(item["trans"]) for item in lines),
+        "has_word_timing": has_word_timing,
         "lines": lines,
     }
     out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     rel = out_path.relative_to(project_root).as_posix()
     song.lyrics_path = rel
     if log:
-        log(f"Fetched lyrics: {rel} ({len(lines)} lines, bilingual={payload['has_translation']})")
+        log(
+            f"Fetched lyrics: {rel} ({len(lines)} lines, "
+            f"bilingual={payload['has_translation']}, word_timing={has_word_timing})"
+        )
     return out_path
 
 

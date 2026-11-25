@@ -286,12 +286,12 @@ def search_netease_song_id(
     return None
 
 
-def fetch_netease_lyrics(song_id: int | str) -> tuple[str, str]:
-    """Fetch original LRC and Chinese translation LRC from NetEase Cloud Music."""
+def fetch_netease_lyrics_full(song_id: int | str) -> tuple[str, str, str]:
+    """Fetch original LRC, Chinese translation LRC, and YRC word-level lyrics from NetEase."""
     try:
         resp = requests.get(
             "https://music.163.com/api/song/lyric",
-            params={"id": str(song_id), "lv": 1, "tv": 1, "kv": -1},
+            params={"id": str(song_id), "lv": 1, "tv": 1, "yv": 1, "rv": 1, "kv": -1},
             headers=HEADERS,
             timeout=10,
         )
@@ -299,9 +299,16 @@ def fetch_netease_lyrics(song_id: int | str) -> tuple[str, str]:
         data = resp.json()
         orig_lrc = ((data.get("lrc") or {}).get("lyric") or "").strip()
         trans_lrc = ((data.get("tlyric") or {}).get("lyric") or "").strip()
-        return orig_lrc, trans_lrc
+        yrc_lrc = ((data.get("yrc") or {}).get("lyric") or "").strip()
+        return orig_lrc, trans_lrc, yrc_lrc
     except Exception:
-        return "", ""
+        return "", "", ""
+
+
+def fetch_netease_lyrics(song_id: int | str) -> tuple[str, str]:
+    """Fetch original LRC and Chinese translation LRC from NetEase Cloud Music."""
+    orig_lrc, trans_lrc, _ = fetch_netease_lyrics_full(song_id)
+    return orig_lrc, trans_lrc
 
 
 def import_netease_playlist(
