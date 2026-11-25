@@ -68,16 +68,7 @@
       "template": "annual",
       "pre_rendered_clip": "",
       "beat_motion": "auto",
-      "beat_path": "processed/samebeam_it_brings_back_memories__though_there_was_nothing_in_those_days___nothingness__was_still_there__beat.json",
-      "has_file": true,
-      "file_size_mb": 15.48,
-      "has_cover": true,
-      "has_normalized": true,
-      "has_pre_rendered": false,
-      "has_lyrics": true,
-      "has_beat": false,
-      "has_audio": true,
-      "audio_size_mb": 31.66
+      "beat_path": "processed/samebeam_it_brings_back_memories__though_there_was_nothing_in_those_days___nothingness__was_still_there__beat.json"
     },
     {
       "title": "iPod Touch",
@@ -115,16 +106,7 @@
       "template": "annual",
       "pre_rendered_clip": "",
       "beat_motion": "auto",
-      "beat_path": "",
-      "has_file": true,
-      "file_size_mb": 90.27,
-      "has_cover": true,
-      "has_normalized": true,
-      "has_pre_rendered": false,
-      "has_lyrics": true,
-      "has_beat": false,
-      "has_audio": false,
-      "audio_size_mb": 0
+      "beat_path": ""
     },
     {
       "title": "ピュア (feat. 橋本絵莉子)",
@@ -159,16 +141,7 @@
       "template": "annual",
       "pre_rendered_clip": "",
       "beat_motion": "auto",
-      "beat_path": "",
-      "has_file": true,
-      "file_size_mb": 41.48,
-      "has_cover": true,
-      "has_normalized": true,
-      "has_pre_rendered": false,
-      "has_lyrics": true,
-      "has_beat": false,
-      "has_audio": false,
-      "audio_size_mb": 0
+      "beat_path": ""
     },
     {
       "title": "Our Love Is Alive",
@@ -203,16 +176,7 @@
       "template": "annual",
       "pre_rendered_clip": "",
       "beat_motion": "auto",
-      "beat_path": "",
-      "has_file": true,
-      "file_size_mb": 48.94,
-      "has_cover": true,
-      "has_normalized": true,
-      "has_pre_rendered": false,
-      "has_lyrics": true,
-      "has_beat": false,
-      "has_audio": false,
-      "audio_size_mb": 0
+      "beat_path": ""
     },
     {
       "title": "Cupid",
@@ -232,7 +196,7 @@
       "reason": "很浪漫的旋律 主唱的嗓音也很有特点",
       "reason_mode": "auto",
       "reason_timings": [],
-      "transition_style": "diamond_reveal",
+      "transition_style": "cross_dissolve",
       "visual_effect": "auto",
       "lyrics_path": "lyrics/LAMA_Cupid.json",
       "lyrics_offset": 0.0,
@@ -247,16 +211,7 @@
       "template": "annual",
       "pre_rendered_clip": "",
       "beat_motion": "auto",
-      "beat_path": "",
-      "has_file": true,
-      "file_size_mb": 20.84,
-      "has_cover": true,
-      "has_normalized": true,
-      "has_pre_rendered": false,
-      "has_lyrics": true,
-      "has_beat": false,
-      "has_audio": false,
-      "audio_size_mb": 0
+      "beat_path": ""
     },
     {
       "title": "わをん",
@@ -291,16 +246,7 @@
       "template": "annual",
       "pre_rendered_clip": "",
       "beat_motion": "off",
-      "beat_path": "",
-      "has_file": true,
-      "file_size_mb": 54.22,
-      "has_cover": true,
-      "has_normalized": true,
-      "has_pre_rendered": false,
-      "has_lyrics": true,
-      "has_beat": false,
-      "has_audio": false,
-      "audio_size_mb": 0
+      "beat_path": ""
     },
     {
       "title": "B Who I Want 2 B",
@@ -335,16 +281,7 @@
       "template": "annual",
       "pre_rendered_clip": "",
       "beat_motion": "auto",
-      "beat_path": "",
-      "has_file": true,
-      "file_size_mb": 86.06,
-      "has_cover": true,
-      "has_normalized": true,
-      "has_pre_rendered": false,
-      "has_lyrics": true,
-      "has_beat": false,
-      "has_audio": false,
-      "audio_size_mb": 0
+      "beat_path": ""
     },
     {
       "title": "joy",
@@ -379,16 +316,7 @@
       "template": "annual",
       "pre_rendered_clip": "",
       "beat_motion": "auto",
-      "beat_path": "processed/レイ_ハラカミ_joy_beat.json",
-      "has_file": true,
-      "file_size_mb": 34.28,
-      "has_cover": true,
-      "has_normalized": true,
-      "has_pre_rendered": false,
-      "has_lyrics": false,
-      "has_beat": false,
-      "has_audio": true,
-      "audio_size_mb": 56.28
+      "beat_path": "processed/レイ_ハラカミ_joy_beat.json"
     },
     {
       "title": "Summer Fling",
@@ -423,16 +351,7 @@
       "template": "annual",
       "pre_rendered_clip": "",
       "beat_motion": "auto",
-      "beat_path": "processed/leroy___Jane_Remover_Summer_Fling_beat.json",
-      "has_file": true,
-      "file_size_mb": 14.88,
-      "has_cover": true,
-      "has_normalized": true,
-      "has_pre_rendered": false,
-      "has_lyrics": true,
-      "has_beat": false,
-      "has_audio": true,
-      "audio_size_mb": 51
+      "beat_path": "processed/leroy___Jane_Remover_Summer_Fling_beat.json"
     },
     {
       "title": "グッドバイ",
@@ -467,16 +386,7 @@
       "template": "annual",
       "pre_rendered_clip": "",
       "beat_motion": "auto",
-      "beat_path": "",
-      "has_file": true,
-      "file_size_mb": 51.18,
-      "has_cover": true,
-      "has_normalized": true,
-      "has_pre_rendered": false,
-      "has_lyrics": true,
-      "has_beat": false,
-      "has_audio": false,
-      "audio_size_mb": 0
+      "beat_path": ""
     }
   ],
   "_comment": "音乐推荐视频歌单配置 — 由 download.py 下载素材后自动补全 file_path"

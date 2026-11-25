@@ -477,18 +477,65 @@ def _preprocess_after_download(index: int, refresh_norm: bool = True):
     save_playlist_model(playlist, PLAYLIST_FILE)
 
 
-def _worker_download_single(index: int, force: bool, quality: str):
+def _make_song_key(song) -> tuple[str, str, str]:
+    """Build a stable (netease_id, title, artist) identifier for queued jobs."""
+    if isinstance(song, dict):
+        return (
+            str(song.get("netease_id", "") or "").strip(),
+            str(song.get("title", "") or ""),
+            str(song.get("artist", "") or ""),
+        )
+    return (
+        str(getattr(song, "netease_id", "") or "").strip(),
+        str(getattr(song, "title", "") or ""),
+        str(getattr(song, "artist", "") or ""),
+    )
+
+
+def _resolve_song_index(
+    songs: list,
+    fallback_index: int,
+    song_key: tuple[str, str, str] | None,
+) -> Optional[int]:
+    """Resolve current song index even if the playlist was reordered while queued."""
+    if song_key is None:
+        return fallback_index if 0 <= fallback_index < len(songs) else None
+
+    if 0 <= fallback_index < len(songs) and _make_song_key(songs[fallback_index]) == song_key:
+        return fallback_index
+
+    target_nid, target_title, target_artist = song_key
+    if target_nid:
+        for idx, s in enumerate(songs):
+            if _make_song_key(s)[0] == target_nid:
+                return idx
+
+    for idx, s in enumerate(songs):
+        _, s_title, s_artist = _make_song_key(s)
+        if s_title == target_title and s_artist == target_artist:
+            return idx
+
+    return None
+
+
+def _worker_download_single(
+    index: int,
+    force: bool,
+    quality: str,
+    song_key: tuple[str, str, str] | None = None,
+):
     """Background worker for downloading a single song."""
     with task_lock:
         tasks_state["is_downloading"] = True
     try:
         data = load_playlist()
         songs = data.get("songs", [])
-        if index < 0 or index >= len(songs):
-            log_task("无效的歌曲序号")
+        resolved_index = _resolve_song_index(songs, index, song_key)
+        if resolved_index is None:
+            log_task("歌曲已从歌单移除或序号无效，跳过下载")
             return
 
-        song = songs[index]
+        song = songs[resolved_index]
         title, artist = song.get("title", ""), song.get("artist", "")
         url = song.get("youtube_url", "").strip()
 
@@ -524,7 +571,7 @@ def _worker_download_single(index: int, force: bool, quality: str):
             song["file_path"] = to_relative_path(out_path)
             save_playlist(data)
             log_task(f"✓ 下载成功: {title}")
-            _preprocess_after_download(index, refresh_norm=True)
+            _preprocess_after_download(resolved_index, refresh_norm=True)
         else:
             log_task(f"✗ 下载失败: {title}")
     except Exception as e:
@@ -536,13 +583,18 @@ def download_single_api(req: DownloadSingleRequest):
     """Enqueue download for a single song (supports queuing multiple songs)."""
     data = load_playlist()
     songs = data.get("songs", [])
-    title = songs[req.index].get("title", f"#{req.index + 1}") if 0 <= req.index < len(songs) else f"#{req.index + 1}"
+    if not (0 <= req.index < len(songs)):
+        raise HTTPException(status_code=400, detail="无效的歌曲序号")
+    target_song = songs[req.index]
+    title = target_song.get("title", f"#{req.index + 1}")
+    song_key = _make_song_key(target_song)
     enqueue_download_job(
         f"下载 MV - {title}",
         _worker_download_single,
         req.index,
         req.force,
         req.quality,
+        song_key,
     )
     return {"status": "queued", "message": f"已加入下载队列: {title}", "queue_count": tasks_state["queue_count"]}
 
@@ -724,17 +776,24 @@ class NeteaseAudioSingleRequest(BaseModel):
     force: bool = True
 
 
-def _worker_netease_audio_single(index: int, mode: str, quality: Optional[str], force: bool):
+def _worker_netease_audio_single(
+    index: int,
+    mode: str,
+    quality: Optional[str],
+    force: bool,
+    song_key: tuple[str, str, str] | None = None,
+):
     """Background worker to download NetEase audio (and optionally compose cover MP4) for one song."""
     with task_lock:
         tasks_state["is_downloading"] = True
         tasks_state["progress_percent"] = 10
     try:
         playlist = load_playlist_model(PLAYLIST_FILE)
-        if index < 0 or index >= len(playlist.songs):
-            log_task("无效的歌曲序号")
+        resolved_index = _resolve_song_index(playlist.songs, index, song_key)
+        if resolved_index is None:
+            log_task("歌曲已从歌单移除或序号无效，跳过网易云音源下载")
             return
-        song = playlist.songs[index]
+        song = playlist.songs[resolved_index]
         mode_label = "封面合成 1080p MP4" if mode == "video" else "纯音频"
         with task_lock:
             tasks_state["current_song"] = f"网易云({mode_label}): {song.artist} - {song.title}"
@@ -758,7 +817,7 @@ def _worker_netease_audio_single(index: int, mode: str, quality: Optional[str], 
         if mode == "video":
             song.media_source = "netease_cover"
             save_playlist_model(playlist, PLAYLIST_FILE)
-            _preprocess_after_download(index, refresh_norm=True)
+            _preprocess_after_download(resolved_index, refresh_norm=True)
             log_task(f"✅ 网易云音源 + 封面合成完成: {song.title} ({res['quality']})")
         else:
             log_task(f"✅ 网易云纯音频下载完成: {song.title} ({res['quality']} -> {res['audio_path']})")
@@ -774,7 +833,11 @@ def netease_audio_download_single_api(req: NeteaseAudioSingleRequest):
     """Enqueue single-song NetEase audio download (supports queuing multiple songs)."""
     mode = "audio" if req.mode == "audio" else "video"
     playlist = load_playlist_model(PLAYLIST_FILE)
-    title = playlist.songs[req.index].title if 0 <= req.index < len(playlist.songs) else f"#{req.index + 1}"
+    if not (0 <= req.index < len(playlist.songs)):
+        raise HTTPException(status_code=400, detail="无效的歌曲序号")
+    target_song = playlist.songs[req.index]
+    title = target_song.title
+    song_key = _make_song_key(target_song)
     label = f"网易云{'纯音频' if mode == 'audio' else '合成MV'} - {title}"
     enqueue_download_job(
         label,
@@ -783,6 +846,7 @@ def netease_audio_download_single_api(req: NeteaseAudioSingleRequest):
         mode,
         req.quality,
         req.force,
+        song_key,
     )
     return {"status": "queued", "message": f"已加入队列: {label}", "queue_count": tasks_state["queue_count"]}
 

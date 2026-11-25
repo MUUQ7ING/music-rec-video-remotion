@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   AbsoluteFill,
+  Audio,
   Img,
   OffthreadVideo,
   continueRender,
@@ -109,6 +110,8 @@ export const SongSegment: React.FC<SongSegmentProps> = ({
 
   const videoPath = song.normalized_path || song.file_path;
   const videoUrl = resolveAssetUrl(videoPath, mediaBaseUrl);
+  const audioUrl = resolveAssetUrl(song.audio_path, mediaBaseUrl);
+  const mediaAudioUrl = videoUrl || audioUrl;
   const coverUrl = resolveAssetUrl(song.cover_path, mediaBaseUrl) || song.cover_url || '';
 
   const hasIntro = Boolean(intro?.enabled && intro?.text?.trim());
@@ -239,7 +242,7 @@ export const SongSegment: React.FC<SongSegmentProps> = ({
       {/* V1: Base MV Video (wrapped in optional cover/beat/glitch visual effect) */}
       <VisualEffects
         effect={song.visual_effect}
-        audioSrc={videoUrl}
+        audioSrc={mediaAudioUrl}
         startSec={startSec}
         coverUrl={coverUrl}
         lyrics={lyrics}
@@ -259,6 +262,15 @@ export const SongSegment: React.FC<SongSegmentProps> = ({
           />
         ) : null}
       </VisualEffects>
+
+      {/* Audio-only fallback when no MV video is present */}
+      {!videoUrl && audioUrl ? (
+        <Audio
+          src={audioUrl}
+          startFrom={startFrom}
+          volume={computeVolume}
+        />
+      ) : null}
 
       {/* Optional Intro overlay over the continuously playing first song */}
       {hasIntro && intro ? (
@@ -352,9 +364,9 @@ export const SongSegment: React.FC<SongSegmentProps> = ({
               style={{ width: '100%', height: '100%', objectFit: 'cover' }}
             />
           ) : null}
-          {videoUrl ? (
+          {mediaAudioUrl ? (
             <div style={{ position: 'absolute', left: 0, bottom: 0, width: 186, height: 68 }}>
-              <AudioSpectrum audioSrc={videoUrl} startSec={startSec} width={186} height={68} />
+              <AudioSpectrum audioSrc={mediaAudioUrl} startSec={startSec} width={186} height={68} />
             </div>
           ) : null}
         </div>

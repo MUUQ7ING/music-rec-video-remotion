@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
+import threading
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -10,6 +13,21 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 DEFAULT_PLAYLIST_PATH = Path(__file__).resolve().parent.parent / "playlist.json"
+
+_PLAYLIST_IO_LOCK = threading.RLock()
+
+# Runtime-only status fields injected by GET /api/playlist; never persist to disk.
+RUNTIME_SONG_FIELDS = frozenset({
+    "has_file",
+    "file_size_mb",
+    "has_cover",
+    "has_normalized",
+    "has_pre_rendered",
+    "has_lyrics",
+    "has_beat",
+    "has_audio",
+    "audio_size_mb",
+})
 
 
 class ResolutionConfig(BaseModel):
@@ -103,29 +121,62 @@ class PlaylistConfig(BaseModel):
     songs: list[SongItem] = Field(default_factory=list)
 
 
+def _strip_runtime_song_fields(data: dict) -> dict:
+    """Return a shallow copy of playlist data with runtime-only song fields removed."""
+    songs = data.get("songs")
+    if isinstance(songs, list):
+        cleaned_songs = []
+        for song in songs:
+            if isinstance(song, dict):
+                cleaned_songs.append(
+                    {k: v for k, v in song.items() if k not in RUNTIME_SONG_FIELDS}
+                )
+            else:
+                cleaned_songs.append(song)
+        data = {**data, "songs": cleaned_songs}
+    return data
+
+
 def load_playlist(path: Path | str = DEFAULT_PLAYLIST_PATH) -> PlaylistConfig:
     """Load and validate playlist.json, filling defaults for missing fields."""
     target = Path(path)
-    if not target.exists():
-        return PlaylistConfig()
-    raw = json.loads(target.read_text(encoding="utf-8"))
-    return PlaylistConfig.model_validate(raw)
+    with _PLAYLIST_IO_LOCK:
+        if not target.exists():
+            return PlaylistConfig()
+        raw = json.loads(target.read_text(encoding="utf-8"))
+        return PlaylistConfig.model_validate(raw)
 
 
 def save_playlist(
     playlist: PlaylistConfig | dict,
     path: Path | str = DEFAULT_PLAYLIST_PATH,
 ) -> Path:
-    """Persist playlist configuration as formatted UTF-8 JSON."""
+    """Persist playlist configuration atomically as formatted UTF-8 JSON."""
     target = Path(path)
-    model = (
-        playlist
-        if isinstance(playlist, PlaylistConfig)
-        else PlaylistConfig.model_validate(playlist)
-    )
-    target.write_text(
-        json.dumps(model.model_dump(exclude_none=True), ensure_ascii=False, indent=2)
-        + "\n",
-        encoding="utf-8",
-    )
+    if isinstance(playlist, PlaylistConfig):
+        raw_data = playlist.model_dump(exclude_none=True)
+    else:
+        raw_data = PlaylistConfig.model_validate(playlist).model_dump(exclude_none=True)
+    cleaned_data = _strip_runtime_song_fields(raw_data)
+    payload = json.dumps(cleaned_data, ensure_ascii=False, indent=2) + "\n"
+
+    with _PLAYLIST_IO_LOCK:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_name = tempfile.mkstemp(
+            prefix=f".{target.name}.",
+            suffix=".tmp",
+            dir=str(target.parent),
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(payload)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_name, target)
+        except Exception:
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
+            raise
     return target
