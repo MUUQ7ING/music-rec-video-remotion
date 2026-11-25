@@ -950,6 +950,47 @@ def _is_port_open(port: int) -> bool:
     return False
 
 
+def _ensure_remotion_public_links() -> None:
+    """Ensure remotion/public links to project media directories across macOS/Linux/Windows."""
+    remotion_dir = BASE_PATH / "remotion"
+    if not remotion_dir.exists():
+        return
+    public_dir = remotion_dir / "public"
+    public_dir.mkdir(parents=True, exist_ok=True)
+    is_junction = getattr(os.path, "isjunction", lambda _p: False)
+
+    for name in ("processed", "covers", "lyrics", "raw", "audio"):
+        target = (BASE_PATH / name).resolve()
+        target.mkdir(parents=True, exist_ok=True)
+        link = public_dir / name
+
+        if os.path.lexists(link):
+            try:
+                if link.exists() and link.resolve() == target:
+                    continue
+            except OSError:
+                pass
+
+            # Remove stale/broken symlink or Windows junction before recreating
+            if link.is_symlink():
+                link.unlink()
+            elif os.name == "nt" and is_junction(link):
+                os.rmdir(link)
+            else:
+                # Keep user-created real directories intact
+                continue
+
+        if os.name == "nt":
+            subprocess.run(
+                ["cmd", "/c", "mklink", "/J", str(link), str(target)],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        else:
+            os.symlink(target, link)
+
+
 @app.post("/api/remotion/studio")
 def start_remotion_studio():
     """Start Remotion Studio on port 3000 for 1:1 live preview."""
@@ -957,6 +998,8 @@ def start_remotion_studio():
     remotion_dir = BASE_PATH / "remotion"
     if not remotion_dir.exists():
         return JSONResponse(status_code=404, content={"message": "remotion/ 目录不存在"})
+
+    _ensure_remotion_public_links()
 
     if _is_port_open(3000):
         return {"status": "running", "url": "http://localhost:3000"}
@@ -1002,6 +1045,7 @@ def _worker_remotion_render(output_name: Optional[str]):
         tasks_state["progress_percent"] = 0
         tasks_state["current_song"] = "Remotion 全片渲染中..."
     try:
+        _ensure_remotion_public_links()
         playlist = load_playlist_model(PLAYLIST_FILE)
         remotion_dir = BASE_PATH / "remotion"
         out_dir = BASE_PATH / "output"
@@ -1102,6 +1146,7 @@ def remotion_render_api(req: RemotionRenderRequest):
 
 
 if __name__ == "__main__":
+    _ensure_remotion_public_links()
     print("=======================================================")
     print(" 🎵 音乐推荐视频制作工作台 (Web Studio)")
     print(" 本地服务已启动: http://localhost:8000")
