@@ -14,7 +14,9 @@ import re
 import sys
 import requests
 
-PLAYLIST_FILE = os.path.join(os.path.dirname(__file__), "playlist.json")
+PLAYLIST_FILE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "playlist.json"
+)
 
 HEADERS = {
     "User-Agent": (

@@ -38,74 +38,103 @@
   <div id="app" v-cloak class="flex flex-col min-h-screen">
     
     <!-- Top Navigation Header -->
-    <header class="sticky top-0 z-40 bg-zinc-900/90 backdrop-blur border-b border-zinc-800 px-6 py-4 flex items-center justify-between">
-      <div class="flex items-center space-x-3">
-        <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-brand-500/20">
+    <header class="sticky top-0 z-40 bg-zinc-900/90 backdrop-blur border-b border-zinc-800 px-6 py-3.5 flex items-center justify-between gap-4">
+      <div class="flex items-center space-x-3 shrink-0">
+        <div class="w-9 h-9 shrink-0 rounded-xl bg-gradient-to-tr from-brand-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-brand-500/20">
           <svg class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
           </svg>
         </div>
-        <div>
-          <h1 class="text-lg font-bold tracking-tight text-white flex items-center gap-2">
-            音乐推荐视频制作台
-            <span class="text-xs px-2 py-0.5 rounded-full bg-brand-500/20 text-brand-300 border border-brand-500/30 font-normal">Premiere Pro 联动</span>
+        <div class="whitespace-nowrap">
+          <h1 class="text-base font-bold tracking-tight text-white flex items-center gap-2">
+            <span>音乐推荐视频制作台</span>
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/30 font-normal">Remotion</span>
           </h1>
           <p class="text-xs text-zinc-400">序列：<span class="text-zinc-200 font-medium">{{ playlist.output_sequence_name || '未命名' }}</span> · 共 {{ playlist.songs?.length || 0 }} 首</p>
         </div>
       </div>
 
-      <div class="flex items-center space-x-3">
-        <!-- Bilibili QR Login Button (hidden once logged in) -->
-        <button v-if="!biliUser.logged_in" @click="openBiliLoginModal" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 transition flex items-center gap-1.5">
-          <span class="w-2 h-2 rounded-full bg-pink-400"></span>
-          <span>B站扫码登录</span>
-        </button>
-
-        <!-- NetEase import button -->
-        <button @click="showNeteaseModal = true" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 transition flex items-center gap-1.5">
-          <svg class="w-4 h-4 text-red-400" viewBox="0 0 24 24" fill="currentColor">
-            <circle cx="12" cy="12" r="10" />
-          </svg>
-          导入网易云歌单
-        </button>
-
-        <!-- NetEase Audio Source Settings & Batch Modal Trigger -->
-        <button @click="openNeteaseAudioModal" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 transition flex items-center gap-1.5">
-          <span class="w-2 h-2 rounded-full" :class="neteaseAudioCfg.configured ? 'bg-emerald-400' : 'bg-amber-400'"></span>
-          <span>网易云音源</span>
-        </button>
+      <div class="flex items-center gap-2 shrink-0">
+        <!-- Secondary Tools Dropdown -->
+        <div class="relative">
+          <button
+            @click="showToolsMenu = !showToolsMenu"
+            class="px-3 py-1.5 text-xs font-medium rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 transition flex items-center gap-1.5 whitespace-nowrap"
+          >
+            <span>⚙️ 导入与工具</span>
+            <span class="text-[10px] text-zinc-400">▾</span>
+          </button>
+          <div
+            v-if="showToolsMenu"
+            @click="showToolsMenu = false"
+            class="fixed inset-0 z-40"
+          ></div>
+          <div
+            v-if="showToolsMenu"
+            class="absolute right-0 mt-2 w-52 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl py-1.5 z-50 text-xs"
+          >
+            <button
+              @click="showNeteaseModal = true; showToolsMenu = false"
+              class="w-full px-3.5 py-2 text-left text-zinc-200 hover:bg-zinc-800 flex items-center gap-2"
+            >
+              <span class="w-2 h-2 rounded-full bg-red-400"></span>
+              <span>导入网易云歌单</span>
+            </button>
+            <button
+              @click="openNeteaseAudioModal(); showToolsMenu = false"
+              class="w-full px-3.5 py-2 text-left text-zinc-200 hover:bg-zinc-800 flex items-center gap-2"
+            >
+              <span class="w-2 h-2 rounded-full" :class="neteaseAudioCfg.configured ? 'bg-emerald-400' : 'bg-amber-400'"></span>
+              <span>网易云音源设置</span>
+            </button>
+            <button
+              v-if="!biliUser.logged_in"
+              @click="openBiliLoginModal(); showToolsMenu = false"
+              class="w-full px-3.5 py-2 text-left text-zinc-200 hover:bg-zinc-800 flex items-center gap-2"
+            >
+              <span class="w-2 h-2 rounded-full bg-pink-400"></span>
+              <span>B站扫码登录</span>
+            </button>
+            <div class="my-1 border-t border-zinc-800"></div>
+            <button
+              @click="analyzeAllVisuals(); showToolsMenu = false"
+              :disabled="status.is_downloading"
+              class="w-full px-3.5 py-2 text-left text-emerald-300 hover:bg-zinc-800 disabled:opacity-40 flex items-center gap-2"
+            >
+              <span>✨ 视觉分析与歌词</span>
+            </button>
+            <button
+              @click="savePlaylist(); showToolsMenu = false"
+              class="w-full px-3.5 py-2 text-left text-zinc-300 hover:bg-zinc-800 flex items-center gap-2"
+            >
+              <span>💾 手动保存配置</span>
+            </button>
+          </div>
+        </div>
 
         <!-- Reorder Playlist Modal Trigger -->
-        <button @click="openReorderModal" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 transition flex items-center gap-1.5">
-          <span>⇅</span>
-          <span>歌单排序</span>
+        <button @click="openReorderModal" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 transition flex items-center gap-1 whitespace-nowrap">
+          <span>⇅ 排序</span>
         </button>
 
         <!-- Batch Download Button -->
-        <button @click="downloadAll" :disabled="status.is_downloading" class="px-4 py-1.5 text-xs font-medium rounded-lg bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white shadow-md shadow-brand-600/30 transition flex items-center gap-2">
-          <svg v-if="status.is_downloading" class="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+        <button @click="downloadAll" :disabled="status.is_downloading" class="px-3.5 py-1.5 text-xs font-medium rounded-lg bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white shadow-md shadow-brand-600/30 transition flex items-center gap-1.5 whitespace-nowrap">
+          <svg v-if="status.is_downloading" class="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
           </svg>
-          <svg v-else class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-          </svg>
-          <span>{{ status.is_downloading ? '下载中: ' + status.current_song : '一键下载全部 1080p' }}</span>
+          <span>{{ status.is_downloading ? '处理中...' : '⬇ 一键下载' }}</span>
         </button>
 
-        <!-- Visual Analysis & Bilingual Lyrics Button -->
-        <button @click="analyzeAllVisuals" :disabled="status.is_downloading" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-emerald-700/80 hover:bg-emerald-600 disabled:opacity-50 text-white border border-emerald-600/50 transition">
-          ✨ 视觉分析与歌词
+        <!-- Remotion Studio & Render Buttons -->
+        <button @click="openRemotionStudio" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-sky-700/80 hover:bg-sky-600 text-white border border-sky-500/50 transition whitespace-nowrap">
+          🎬 实时预览
         </button>
-
-        <!-- Special AE Render Button -->
-        <button @click="renderSpecialAll" :disabled="status.is_downloading" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-purple-700/80 hover:bg-purple-600 disabled:opacity-50 text-white border border-purple-600/50 transition">
-          渲染特殊单曲
+        <button v-if="!status.is_downloading" @click="renderRemotionVideo" class="px-3.5 py-1.5 text-xs font-medium rounded-lg bg-rose-600 hover:bg-rose-500 text-white shadow-md shadow-rose-600/30 transition whitespace-nowrap">
+          🚀 导出 MP4
         </button>
-
-        <!-- Save button -->
-        <button @click="savePlaylist" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 transition">
-          保存配置
+        <button v-else @click="cancelRemotionRender" class="px-3.5 py-1.5 text-xs font-medium rounded-lg bg-amber-600 hover:bg-amber-500 text-white shadow-md shadow-amber-600/30 transition whitespace-nowrap">
+          ⏹ 停止渲染
         </button>
       </div>
     </header>
@@ -136,8 +165,8 @@
             </svg>
           </div>
           <div>
-            <div class="font-medium text-white text-sm">Premiere Pro 快速使用指引</div>
-            <div class="text-zinc-400 mt-0.5">导入网易云歌单自动拉取 1:1 封面，下载素材后自动完成 -14 LUFS 响度统一；在 Pr 中通过 <span class="text-zinc-200 font-mono bg-zinc-800 px-1 py-0.5 rounded">ExtendScript Debugger</span> 或 <span class="text-zinc-200 font-mono bg-zinc-800 px-1 py-0.5 rounded">文件 → 脚本 → 运行脚本</span> 运行 <span class="text-brand-300 font-mono">scripts/assemble_v2.jsx</span>，配合 <span class="text-brand-300 font-mono">templates/annual.mogrt</span> 自动生成！</div>
+            <div class="font-medium text-white text-sm">Remotion 快速使用指引</div>
+            <div class="text-zinc-400 mt-0.5">导入网易云歌单自动拉取 1:1 封面，下载、选用本地视频或网易云合成 MV 后自动完成 -14 LUFS 响度统一；在「✂️ 精准定剪试听」中切分单曲多段高潮、校准双语歌词并撰写文案，最后点击右上角 <span class="text-sky-300 font-medium">「🎬 Remotion 实时预览」</span> 或 <span class="text-rose-300 font-medium">「🚀 Remotion 导出成片」</span> 即可直接渲染输出 MP4！</div>
           </div>
         </div>
         <button @click="showLogs = !showLogs" class="text-xs text-zinc-400 hover:text-zinc-200 underline">
@@ -151,35 +180,69 @@
         <div v-if="!status.logs || status.logs.length === 0" class="text-zinc-600">暂无活动日志</div>
       </div>
 
-      <!-- Optional Intro Editor Card -->
+      <!-- Optional Intro & Global Transition Editor Card -->
       <div v-if="playlist.intro" class="bg-zinc-900/70 rounded-xl border border-zinc-800 p-4 space-y-3">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <label class="flex items-center gap-2.5 cursor-pointer select-none">
             <input type="checkbox" v-model="playlist.intro.enabled" @change="savePlaylist" class="w-4 h-4 rounded accent-brand-500" />
             <span class="text-sm font-semibold text-white">启用开场白 (Intro)</span>
-            <span class="text-xs text-zinc-500">位于首曲之前，居中衬线体展示</span>
+            <span class="text-xs text-zinc-500">支持空行分段依次过渡，结束后直接切入首曲</span>
           </label>
-          <div v-if="playlist.intro.enabled" class="flex items-center gap-3 text-xs">
-            <label class="flex items-center gap-1.5 text-zinc-400">
-              <span>时长(秒)</span>
-              <input type="number" step="0.5" min="1" v-model.number="playlist.intro.duration" @change="savePlaylist" class="w-16 px-2 py-1 bg-zinc-950 border border-zinc-800 rounded text-zinc-200 text-center font-mono" />
-            </label>
-            <label class="flex items-center gap-1.5 text-zinc-400">
-              <span>背景</span>
-              <select v-model="playlist.intro.bg_mode" @change="savePlaylist" class="px-2 py-1 bg-zinc-950 border border-zinc-800 rounded text-zinc-200">
-                <option value="black">纯黑底</option>
-                <option value="blur_first_song">首曲虚化背景</option>
-                <option value="image">自定义图片</option>
+          <div class="flex flex-wrap items-center gap-3 text-xs">
+            <template v-if="playlist.intro.enabled">
+              <label class="flex items-center gap-1.5 text-zinc-300 cursor-pointer">
+                <input type="checkbox" v-model="playlist.intro.auto_duration" @change="onIntroTextOrModeChange" class="rounded accent-brand-500" />
+                <span>自动时长</span>
+              </label>
+              <label class="flex items-center gap-1.5 text-zinc-400">
+                <span>时长(秒)</span>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="1"
+                  :disabled="playlist.intro.auto_duration !== false"
+                  v-model.number="playlist.intro.duration"
+                  @change="savePlaylist"
+                  class="w-16 px-2 py-1 bg-zinc-950 border border-zinc-800 rounded text-zinc-200 text-center font-mono disabled:opacity-60"
+                />
+              </label>
+              <label class="flex items-center gap-1.5 text-zinc-400">
+                <span>背景</span>
+                <select v-model="playlist.intro.bg_mode" @change="savePlaylist" class="px-2 py-1 bg-zinc-950 border border-zinc-800 rounded text-zinc-200">
+                  <option value="blur_first_song">首曲虚化背景（推荐）</option>
+                  <option value="black">纯黑底</option>
+                  <option value="image">自定义图片</option>
+                </select>
+              </label>
+            </template>
+            <label v-if="playlist.transition" class="flex items-center gap-1.5 text-zinc-400 border-l border-zinc-800 pl-3">
+              <span>默认转场</span>
+              <select v-model="playlist.transition.video_style" @change="savePlaylist" class="px-2 py-1 bg-zinc-950 border border-zinc-800 rounded text-zinc-200">
+                <option value="cross_dissolve">交叉叠化 (Fade)</option>
+                <option value="blur_slide">动态模糊滑入</option>
+                <option value="zoom_blur">缩放模糊切入</option>
+                <option value="cross_zoom">交叉变焦</option>
+                <option value="dip_to_black">黑场过渡</option>
+                <option value="flash_white">闪白转场</option>
+                <option value="slide">左右推拉</option>
+                <option value="wipe">画面擦除</option>
+                <option value="flip">3D 翻转</option>
+                <option value="none">硬切 (无转场)</option>
               </select>
+            </label>
+            <label v-if="playlist.transition && playlist.transition.video_style !== 'none'" class="flex items-center gap-1 text-zinc-400">
+              <span>转场(秒)</span>
+              <input type="number" step="0.1" min="0.1" max="2" v-model.number="playlist.transition.video_duration" @change="savePlaylist" class="w-14 px-1.5 py-1 bg-zinc-950 border border-zinc-800 rounded text-zinc-200 text-center font-mono" />
             </label>
           </div>
         </div>
         <textarea
           v-if="playlist.intro.enabled"
           v-model="playlist.intro.text"
-          @change="savePlaylist"
-          rows="2"
-          placeholder="输入你的手写开场白文案（支持换行）..."
+          @input="recalcIntroDuration(false)"
+          @change="onIntroTextOrModeChange"
+          rows="3"
+          placeholder="输入你的手写开场白文案（按两次回车空行可分成多页，依次居中淡入淡出）..."
           class="w-full px-3 py-2 text-xs bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-200 focus:outline-none focus:border-brand-500 resize-y leading-relaxed"
         ></textarea>
       </div>
@@ -189,10 +252,10 @@
         <div 
           v-for="(song, idx) in playlist.songs" 
           :key="idx"
-          class="bg-zinc-900 border border-zinc-800/90 rounded-2xl shadow-xl overflow-hidden transition-all duration-200 hover:border-zinc-700"
+          class="bg-zinc-900 border border-zinc-800/90 rounded-2xl shadow-xl transition-all duration-200 hover:border-zinc-700"
         >
           <!-- Song Title Bar -->
-          <div class="px-6 py-4 bg-zinc-850 border-b border-zinc-800 flex items-center justify-between">
+          <div class="px-6 py-4 bg-zinc-850 border-b border-zinc-800 rounded-t-2xl flex items-center justify-between gap-4">
             <div class="flex items-center space-x-3">
               <span class="w-6 h-6 rounded-lg bg-zinc-800 text-zinc-400 text-xs font-mono font-bold flex items-center justify-center">
                 {{ idx + 1 }}
@@ -204,78 +267,119 @@
               </div>
             </div>
 
-            <!-- Download Status Badge -->
-            <div class="flex flex-wrap items-center gap-2">
-              <a
-                v-if="song.has_audio"
-                :href="`/api/audio/${idx}`"
-                target="_blank"
-                title="点击下载或试听已保存的网易云纯音频"
-                class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 border border-sky-500/25 transition"
-              >
-                <span>🎵</span>
-                <span>纯音频 ({{ song.audio_size_mb }} MB)</span>
-              </a>
-
-              <span v-if="song.has_file" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            <!-- Compact Status & Actions -->
+            <div class="flex items-center gap-2 shrink-0">
+              <span v-if="song.has_file" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 whitespace-nowrap">
                 <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                已下载 1080p ({{ song.file_size_mb }} MB)
+                1080p · {{ song.file_size_mb }} MB
               </span>
-              <span v-else-if="song.youtube_url" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-500/10 text-amber-300 border border-amber-500/20">
+              <span v-else-if="song.youtube_url" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-500/10 text-amber-300 border border-amber-500/20 whitespace-nowrap">
                 <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
-                已定方案 (待下载)
+                待下载
               </span>
-              <span v-else class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-zinc-800 text-zinc-400 border border-zinc-700">
-                待选视频方案
+              <span v-else class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-zinc-800 text-zinc-400 border border-zinc-700 whitespace-nowrap">
+                待选方案
               </span>
 
-              <!-- NetEase Audio Only Button -->
+              <!-- Toggle Candidates Panel Button -->
               <button
-                @click="downloadNeteaseSingle(idx, 'audio')"
-                :disabled="status.is_downloading"
-                title="通过网易云音源仅下载高音质纯音频到 audio/ 目录（不覆盖 MV）"
-                class="px-2.5 py-1 text-xs font-medium rounded-lg bg-zinc-800 hover:bg-sky-900/50 disabled:opacity-50 text-sky-300 border border-sky-500/30 transition"
+                @click="toggleCandidatesPanel(idx, song)"
+                class="px-2.5 py-1 text-xs font-medium rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 transition whitespace-nowrap"
               >
-                🎵 网易云音频
+                {{ isCandidatesExpanded(idx, song) ? '收起备选' : '🔍 选 MV' }}
               </button>
 
-              <!-- NetEase Audio + Cover Compose 1080p MP4 Button -->
-              <button
-                @click="downloadNeteaseSingle(idx, 'video')"
-                :disabled="status.is_downloading"
-                title="下载网易云高音质音频 + 官方专辑封面，自动合成为 1080p MP4 并接入 PR 剪辑管线"
-                class="px-2.5 py-1 text-xs font-medium rounded-lg bg-red-950/60 hover:bg-red-900/60 disabled:opacity-50 text-red-200 border border-red-500/35 transition"
-              >
-                💿 网易云合成MV
-              </button>
-
-              <!-- Single Download Button -->
-              <button 
-                @click="downloadSingle(idx)"
-                :disabled="status.is_downloading"
-                class="px-3 py-1 text-xs font-medium rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-zinc-200 border border-zinc-700 transition"
-              >
-                {{ song.has_file ? '重新下载 1080p' : '立即下载' }}
-              </button>
+              <!-- Compact Song Actions Dropdown -->
+              <div class="relative">
+                <button
+                  @click="songActionMenuIdx = (songActionMenuIdx === idx ? -1 : idx)"
+                  class="px-2.5 py-1 text-xs font-medium rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 transition whitespace-nowrap flex items-center gap-1"
+                >
+                  <span>下载 / 音源</span>
+                  <span class="text-[10px] text-zinc-400">▾</span>
+                </button>
+                <div
+                  v-if="songActionMenuIdx === idx"
+                  @click="songActionMenuIdx = -1"
+                  class="fixed inset-0 z-40"
+                ></div>
+                <div
+                  v-if="songActionMenuIdx === idx"
+                  class="absolute right-0 mt-1.5 w-52 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl py-1.5 z-50 text-xs"
+                >
+                  <button
+                    @click="downloadSingle(idx); songActionMenuIdx = -1"
+                    :disabled="status.is_downloading"
+                    class="w-full px-3.5 py-2 text-left text-zinc-200 hover:bg-zinc-800 disabled:opacity-40 flex items-center gap-2"
+                  >
+                    <span>⬇</span>
+                    <span>{{ song.has_file ? '重新下载 1080p MV' : '立即下载 1080p MV' }}</span>
+                  </button>
+                  <button
+                    @click="downloadNeteaseSingle(idx, 'video'); songActionMenuIdx = -1"
+                    :disabled="status.is_downloading"
+                    class="w-full px-3.5 py-2 text-left text-red-200 hover:bg-zinc-800 disabled:opacity-40 flex items-center gap-2"
+                  >
+                    <span>💿</span>
+                    <span>网易云封面合成 MV</span>
+                  </button>
+                  <button
+                    @click="downloadNeteaseSingle(idx, 'audio'); songActionMenuIdx = -1"
+                    :disabled="status.is_downloading"
+                    class="w-full px-3.5 py-2 text-left text-sky-300 hover:bg-zinc-800 disabled:opacity-40 flex items-center gap-2"
+                  >
+                    <span>🎵</span>
+                    <span>仅下载网易云纯音频</span>
+                  </button>
+                  <a
+                    v-if="song.has_audio"
+                    :href="`/api/audio/${idx}`"
+                    target="_blank"
+                    @click="songActionMenuIdx = -1"
+                    class="w-full px-3.5 py-2 text-left text-emerald-300 hover:bg-zinc-800 flex items-center gap-2 border-t border-zinc-800 mt-1 pt-2"
+                  >
+                    <span>🎧</span>
+                    <span>下载已存纯音频 ({{ song.audio_size_mb }} MB)</span>
+                  </a>
+                </div>
+              </div>
             </div>
           </div>
 
           <!-- Card Body: Two-column grid -->
           <div class="p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
             
-            <!-- Left Column: Clips & Info (4 cols) -->
-            <div class="lg:col-span-4 space-y-4 pr-0 lg:pr-4 lg:border-r lg:border-zinc-800/80">
+            <!-- Left Column: Clips & Info (expands to 12 cols with 2 sub-columns when candidates panel is collapsed) -->
+            <div
+              :class="[
+                isCandidatesExpanded(idx, song)
+                  ? 'lg:col-span-4 space-y-4 pr-0 lg:pr-4 lg:border-r lg:border-zinc-800/80'
+                  : 'lg:col-span-12 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start'
+              ]"
+            >
+              <div :class="isCandidatesExpanded(idx, song) ? 'space-y-4' : 'lg:col-span-5 space-y-4'">
               
               <!-- Selected URL -->
               <div>
-                <label class="block text-xs font-medium text-zinc-400 mb-1.5 flex justify-between">
-                  <span>采用的视频链接</span>
-                  <a v-if="song.youtube_url" :href="song.youtube_url" target="_blank" class="text-brand-400 hover:underline inline-flex items-center gap-0.5">
-                    打开播放
-                    <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                    </svg>
-                  </a>
+                <label class="block text-xs font-medium text-zinc-400 mb-1.5 flex items-center justify-between gap-2">
+                  <span>采用的视频链接 / 本地视频</span>
+                  <div class="flex items-center gap-2.5">
+                    <label class="cursor-pointer text-emerald-400 hover:text-emerald-300 font-medium inline-flex items-center gap-1 transition">
+                      📁 选用本地视频
+                      <input
+                        type="file"
+                        accept="video/*"
+                        @change="uploadLocalMedia(idx, $event)"
+                        class="hidden"
+                      />
+                    </label>
+                    <a v-if="song.youtube_url" :href="song.youtube_url" target="_blank" class="text-brand-400 hover:underline inline-flex items-center gap-0.5">
+                      打开播放
+                      <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
+                    </a>
+                  </div>
                 </label>
                 <input 
                   type="text" 
@@ -286,90 +390,67 @@
                 />
               </div>
 
-              <!-- Time Range (Start/End) -->
-              <div class="grid grid-cols-2 gap-3">
-                <div>
-                  <label class="block text-xs font-medium text-zinc-400 mb-1">截取起始 (分:秒)</label>
-                  <input 
-                    type="text" 
-                    v-model="song.start" 
-                    @change="savePlaylist"
-                    placeholder="0:45"
-                    class="w-full px-3 py-2 text-xs bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-200 text-center font-mono focus:outline-none focus:border-brand-500"
-                  />
-                </div>
-                <div>
-                  <label class="block text-xs font-medium text-zinc-400 mb-1">截取结束 (分:秒)</label>
-                  <input 
-                    type="text" 
-                    v-model="song.end" 
-                    @change="savePlaylist"
-                    placeholder="1:30"
-                    class="w-full px-3 py-2 text-xs bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-200 text-center font-mono focus:outline-none focus:border-brand-500"
-                  />
-                </div>
-              </div>
-
               <!-- Precision Trim Button -->
-              <div class="flex items-center justify-between gap-2">
-                <span class="text-[11px] text-zinc-500 font-mono">
-                  片段时长: <span class="text-zinc-300">{{ formatClipDuration(song.start, song.end) }}</span>
-                </span>
+              <div>
                 <button
                   @click="openTrimModal(idx)"
                   :disabled="!song.has_file"
-                  class="px-2.5 py-1.5 text-xs font-medium rounded-lg bg-zinc-800 hover:bg-brand-600/90 text-zinc-200 hover:text-white border border-zinc-700 hover:border-brand-500 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-1.5"
+                  class="w-full px-3 py-2 text-xs font-medium rounded-lg bg-zinc-800 hover:bg-brand-600/90 text-zinc-200 hover:text-white border border-zinc-700 hover:border-brand-500 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center justify-center gap-1.5"
                 >
                   <span>✂️ 精准定剪试听</span>
                 </button>
               </div>
 
-              <!-- Template & Cover Preview -->
-              <div class="grid grid-cols-12 gap-3 items-center">
-                <div class="col-span-3">
-                  <div class="w-14 h-14 rounded-lg bg-zinc-950 border border-zinc-800 overflow-hidden flex items-center justify-center">
-                    <img v-if="song.has_cover && song.cover_path" :src="'/' + song.cover_path" class="w-full h-full object-cover" alt="cover" />
-                    <span v-else class="text-[10px] text-zinc-600 text-center px-1">无封面</span>
-                  </div>
+              <!-- Cover & Asset Status Badges -->
+              <div class="flex items-center gap-3">
+                <div class="w-14 h-14 shrink-0 rounded-lg bg-zinc-950 border border-zinc-800 overflow-hidden flex items-center justify-center">
+                  <img v-if="song.has_cover && song.cover_path" :src="'/' + song.cover_path" class="w-full h-full object-cover" alt="cover" />
+                  <span v-else class="text-[10px] text-zinc-600 text-center px-1">无封面</span>
                 </div>
-                <div class="col-span-9 space-y-1">
-                  <label class="block text-xs font-medium text-zinc-400">单曲模板样式</label>
-                  <select
-                    v-model="song.template"
-                    @change="savePlaylist"
-                    class="w-full px-2.5 py-1.5 text-xs bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-200 focus:outline-none focus:border-brand-500"
-                  >
-                    <option v-for="r in renderersList" :key="r.name" :value="r.name">
-                      {{ r.name }} — {{ r.ready ? '就绪' : '未就绪' }}
-                    </option>
-                  </select>
-                  <div class="flex flex-wrap gap-1.5 text-[10px] pt-0.5">
-                    <span :class="song.has_normalized ? 'text-emerald-400' : 'text-zinc-600'">{{ song.has_normalized ? '✓ -14 LUFS' : '○ 未响度统一' }}</span>
-                    <span :class="song.has_lyrics ? 'text-sky-400' : 'text-zinc-600'">{{ song.has_lyrics ? '✓ 双语歌词' : '○ 无歌词' }}</span>
-                    <span v-if="song.has_beat" class="text-amber-400">✓ 封面律动</span>
-                    <span v-if="song.template !== 'annual'" :class="song.has_pre_rendered ? 'text-purple-400' : 'text-amber-400'">
-                      {{ song.has_pre_rendered ? '✓ AE 已渲染' : '○ 待 AE 渲染' }}
-                    </span>
-                  </div>
+                <div class="flex flex-wrap gap-1.5 text-[11px]">
+                  <span :class="song.has_normalized ? 'text-emerald-400' : 'text-zinc-600'">{{ song.has_normalized ? '✓ -14 LUFS' : '○ 未响度统一' }}</span>
+                  <span :class="song.has_lyrics ? 'text-sky-400' : 'text-zinc-600'">{{ song.has_lyrics ? '✓ 双语歌词' : '○ 无歌词' }}</span>
                 </div>
               </div>
 
-              <!-- Per-Song Visual & Lyrics Toggles -->
-              <div class="grid grid-cols-3 gap-2 pt-0.5">
+              <!-- Per-Song Visual, Transition & Lyrics Toggles -->
+              <div class="grid grid-cols-2 gap-2 pt-0.5">
+                <div>
+                  <label class="block text-[10px] text-zinc-500 mb-1">切入转场样式</label>
+                  <select v-model="song.transition_style" @change="savePlaylist" class="w-full px-2 py-1 text-[11px] bg-zinc-950 border border-zinc-800 rounded text-zinc-300">
+                    <option value="inherit">跟随全局默认</option>
+                    <option value="cross_dissolve">交叉叠化 (Fade)</option>
+                    <option value="blur_slide">动态模糊滑入</option>
+                    <option value="zoom_blur">缩放模糊切入</option>
+                    <option value="cross_zoom">交叉变焦</option>
+                    <option value="dip_to_black">黑场过渡</option>
+                    <option value="flash_white">闪白转场</option>
+                    <option value="slide">左右推拉</option>
+                    <option value="wipe">画面擦除</option>
+                    <option value="flip">3D 翻转</option>
+                    <option value="none">硬切 (无转场)</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-[10px] text-zinc-500 mb-1">画面/纯封面动效</label>
+                  <select v-model="song.visual_effect" @change="savePlaylist" class="w-full px-2 py-1 text-[11px] bg-zinc-950 border border-zinc-800 rounded text-zinc-300">
+                    <option value="auto">自动</option>
+                    <option value="none">无特效</option>
+                    <option value="beat_pulse">🥁 鼓点脉冲缩放</option>
+                    <option value="glitch">⚡ 赛博故障特效</option>
+                    <option value="ken_burns">🎬 电影缓慢推拉</option>
+                    <option value="vinyl_spin">💿 黑胶唱片旋转</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 gap-2 pt-0.5">
                 <div>
                   <label class="block text-[10px] text-zinc-500 mb-1">阴影对比</label>
                   <select v-model="song.shadow_boost" @change="savePlaylist" class="w-full px-2 py-1 text-[11px] bg-zinc-950 border border-zinc-800 rounded text-zinc-300">
                     <option value="auto">自动</option>
                     <option value="normal">标准</option>
                     <option value="strong">强黑影</option>
-                  </select>
-                </div>
-                <div>
-                  <label class="block text-[10px] text-zinc-500 mb-1">封面律动</label>
-                  <select v-model="song.beat_motion" @change="savePlaylist" class="w-full px-2 py-1 text-[11px] bg-zinc-950 border border-zinc-800 rounded text-zinc-300">
-                    <option value="auto">自动</option>
-                    <option value="on">开启</option>
-                    <option value="off">关闭</option>
                   </select>
                 </div>
                 <div class="flex flex-col justify-end">
@@ -380,11 +461,42 @@
                 </div>
               </div>
 
-              <!-- Recommendation Reason -->
-              <div>
-                <label class="block text-xs font-medium text-zinc-400 mb-1.5">画面推荐语（MOGRT 展示文案）</label>
-                <textarea 
-                  v-model="song.reason" 
+              </div>
+
+              <div :class="isCandidatesExpanded(idx, song) ? 'space-y-4' : 'lg:col-span-7 space-y-4'">
+              <!-- Multi-Clip Summary / Recommendation Reason -->
+              <div class="space-y-2">
+                <div class="flex items-center justify-between">
+                  <label class="block text-xs font-medium text-zinc-400">
+                    {{ song.clips && song.clips.length > 1 ? `已配置 ${song.clips.length} 段高潮（在「✂️ 精准定剪试听」中编辑）` : '画面推荐语' }}
+                  </label>
+                </div>
+
+                <div v-if="song.clips && song.clips.length > 1" class="space-y-1.5">
+                  <div
+                    v-for="(clip, cIdx) in song.clips"
+                    :key="cIdx"
+                    class="px-2.5 py-2 rounded-lg bg-zinc-950/90 border border-zinc-800 text-xs flex items-start justify-between gap-2"
+                  >
+                    <div class="min-w-0 flex-1">
+                      <div class="font-mono text-[11px] text-brand-400 font-semibold">
+                        #{{ cIdx + 1 }} · {{ clip.start }} → {{ clip.end }} ({{ formatClipDuration(clip.start, clip.end) }})
+                      </div>
+                      <div class="text-zinc-300 text-[11px] mt-0.5 whitespace-pre-wrap">{{ clip.reason || song.reason || '（继承主文案）' }}</div>
+                    </div>
+                    <button
+                      v-if="song.has_file"
+                      @click="openTrimModal(idx, cIdx)"
+                      class="shrink-0 px-2 py-0.5 text-[10px] rounded bg-zinc-800 hover:bg-brand-600 text-zinc-300 hover:text-white border border-zinc-700"
+                    >
+                      编辑
+                    </button>
+                  </div>
+                </div>
+
+                <textarea
+                  v-else
+                  v-model="song.reason"
                   @change="savePlaylist"
                   rows="3"
                   placeholder="写下你对这首歌的个人评价、听感或推荐理由..."
@@ -396,10 +508,11 @@
               <div v-if="song.file_path" class="text-[11px] text-zinc-500 font-mono truncate" :title="song.file_path">
                 本地文件: {{ song.file_path }}
               </div>
+              </div>
             </div>
 
-            <!-- Right Column: Candidate Options Library (8 cols) -->
-            <div class="lg:col-span-8 flex flex-col justify-between">
+            <!-- Right Column: Candidate Options Library (8 cols, collapsible) -->
+            <div v-if="isCandidatesExpanded(idx, song)" class="lg:col-span-8 flex flex-col justify-between">
               
               <!-- Search bar for this song -->
               <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
@@ -545,6 +658,38 @@
               ></video>
             </div>
 
+            <!-- Multi-Clip Segment Switcher inside Trim Modal -->
+            <div class="flex flex-wrap items-center justify-between gap-2 bg-zinc-950/80 border border-zinc-800 rounded-xl p-2">
+              <div class="flex flex-wrap items-center gap-1.5">
+                <button
+                  v-for="(c, cIdx) in trimClips"
+                  :key="cIdx"
+                  @click="switchTrimClip(cIdx)"
+                  :class="[
+                    'px-2.5 py-1 text-[11px] font-mono rounded-lg border transition',
+                    trimActiveClipIdx === cIdx
+                      ? 'bg-brand-600 border-brand-400 text-white font-semibold'
+                      : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'
+                  ]"
+                >
+                  分段 #{{ cIdx + 1 }} ({{ cIdx === trimActiveClipIdx ? formatSec(trimStartSec) : c.start }})
+                </button>
+                <button
+                  @click="addTrimClip"
+                  class="px-2.5 py-1 text-[11px] font-medium rounded-lg bg-zinc-800 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-zinc-700 transition"
+                >
+                  ➕ 添加分段
+                </button>
+              </div>
+              <button
+                v-if="trimClips.length > 1"
+                @click="removeTrimClip(trimActiveClipIdx)"
+                class="px-2 py-1 text-[11px] rounded-lg bg-red-950/60 hover:bg-red-900/70 text-red-300 border border-red-800/50 transition"
+              >
+                🗑 删除当前分段
+              </button>
+            </div>
+
             <!-- Visual Segment Progress Bar -->
             <div class="space-y-1.5">
               <div class="flex items-center justify-between text-xs font-mono">
@@ -610,10 +755,19 @@
                   ⏭ 结尾前 3 秒
                 </button>
               </div>
-              <label class="flex items-center gap-1.5 text-xs text-zinc-300 cursor-pointer">
-                <input type="checkbox" v-model="trimRebuildSpectrum" class="rounded bg-zinc-950 border-zinc-700 text-brand-600" />
-                保存后更新频谱
+            </div>
+
+            <!-- Per-Clip Recommendation Text inside Trim Modal -->
+            <div class="space-y-1 pt-1">
+              <label class="block text-[11px] font-medium text-zinc-400">
+                {{ trimClips.length > 1 ? `分段 #${trimActiveClipIdx + 1} 专属推荐文案` : '画面推荐语' }}
               </label>
+              <textarea
+                v-model="trimClipReason"
+                rows="2"
+                placeholder="边听这段高潮边写文案（多段时每段可写不同文案）..."
+                class="w-full px-3 py-2 text-xs bg-zinc-950 border border-zinc-800 rounded-xl text-zinc-200 focus:outline-none focus:border-brand-500 resize-y leading-relaxed"
+              ></textarea>
             </div>
           </div>
 
@@ -706,7 +860,7 @@
               <div class="text-sm font-medium text-white truncate">{{ item.song.title }}</div>
               <div class="text-xs text-zinc-400 truncate">{{ item.song.artist }}</div>
             </div>
-            <span class="text-[11px] px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 shrink-0">{{ item.song.template || 'annual' }}</span>
+            <span class="text-[11px] font-mono text-zinc-500 shrink-0">{{ item.song.start }} → {{ item.song.end }}</span>
           </div>
         </div>
 
@@ -902,7 +1056,18 @@
 
           <!-- API Configuration Form -->
           <div class="space-y-3 border-t border-zinc-800 pt-4">
-            <div class="font-medium text-zinc-300">更新音源配置（仅保存在本地 gitignored 配置文件）</div>
+            <div class="flex items-center justify-between gap-2">
+              <div class="font-medium text-zinc-300">更新音源配置（仅保存在本地 gitignored 配置文件）</div>
+              <label class="cursor-pointer px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium transition shadow-sm">
+                📂 导入 .js / .json 一键解析
+                <input
+                  type="file"
+                  accept=".js,.json,.txt"
+                  @change="importNeteaseSourceFile"
+                  class="hidden"
+                />
+              </label>
+            </div>
             <div class="grid grid-cols-1 gap-2.5">
               <input
                 type="text"
@@ -943,13 +1108,20 @@
 
     createApp({
       setup() {
-        const playlist = ref({ songs: [], output_sequence_name: '', intro: { enabled: false, text: '', duration: 8, bg_mode: 'black' } });
-        const renderersList = ref([{ name: 'annual', ready: true }]);
+        const playlist = ref({
+          songs: [],
+          output_sequence_name: '',
+          intro: { enabled: false, text: '', auto_duration: true, duration: 8, bg_mode: 'blur_first_song' },
+          transition: { video_style: 'cross_dissolve', video_duration: 0.6, audio_duration: 0.8 },
+        });
         const candidatesMap = ref({});
+        const candidatesExpandedMap = ref({});
         const platformMap = ref({});
         const customQueries = ref({});
         const loadingCandidates = ref({});
         const showLogs = ref(false);
+        const showToolsMenu = ref(false);
+        const songActionMenuIdx = ref(-1);
         const status = ref({ is_downloading: false, current_song: '', logs: [], progress_percent: 0 });
         
         // NetEase Modal State
@@ -995,9 +1167,11 @@
         const trimCurrentSec = ref(0);
         const trimTotalSec = ref(0);
         const trimLoopPlaying = ref(false);
-        const trimRebuildSpectrum = ref(true);
         const trimLyricsLines = ref([]);
         const trimLyricsOffset = ref(0);
+        const trimClips = ref([]);
+        const trimActiveClipIdx = ref(0);
+        const trimClipReason = ref('');
 
         const loadTrimLyrics = async (idx) => {
           trimLyricsLines.value = [];
@@ -1095,14 +1269,84 @@
           }
         };
 
-        const openTrimModal = (idx) => {
+        const syncActiveTrimToBuffer = () => {
+          const cur = trimClips.value[trimActiveClipIdx.value];
+          if (!cur) return;
+          cur.start = formatSec(trimStartSec.value);
+          cur.end = formatSec(trimEndSec.value);
+          cur.reason = trimClipReason.value;
+        };
+
+        const switchTrimClip = (newIdx) => {
+          if (newIdx < 0 || newIdx >= trimClips.value.length) return;
+          syncActiveTrimToBuffer();
+          trimActiveClipIdx.value = newIdx;
+          const next = trimClips.value[newIdx];
+          trimStartSec.value = parseTimeStr(next.start);
+          trimEndSec.value = parseTimeStr(next.end);
+          trimClipReason.value = next.reason || '';
+          trimLoopPlaying.value = false;
+          if (trimVideoRef.value) {
+            try {
+              trimVideoRef.value.pause();
+              trimVideoRef.value.currentTime = trimStartSec.value;
+            } catch (e) {}
+          }
+        };
+
+        const addTrimClip = () => {
+          syncActiveTrimToBuffer();
+          const last = trimClips.value[trimClips.value.length - 1];
+          const baseStart = trimCurrentSec.value > 0 ? trimCurrentSec.value : parseTimeStr(last?.end || '0:30');
+          const maxT = trimTotalSec.value > 0 ? trimTotalSec.value : baseStart + 25;
+          const newStart = Math.min(baseStart, Math.max(0, maxT - 5));
+          const newEnd = Math.min(maxT, newStart + 20);
+          trimClips.value.push({
+            start: formatSec(newStart),
+            end: formatSec(newEnd),
+            reason: '',
+          });
+          switchTrimClip(trimClips.value.length - 1);
+        };
+
+        const removeTrimClip = (cIdx) => {
+          if (trimClips.value.length <= 1) return;
+          trimClips.value.splice(cIdx, 1);
+          const nextIdx = Math.min(cIdx, trimClips.value.length - 1);
+          trimActiveClipIdx.value = nextIdx;
+          const next = trimClips.value[nextIdx];
+          trimStartSec.value = parseTimeStr(next.start);
+          trimEndSec.value = parseTimeStr(next.end);
+          trimClipReason.value = next.reason || '';
+        };
+
+        const openTrimModal = (idx, initialClipIdx = 0) => {
           const song = playlist.value.songs[idx];
           if (!song || !song.has_file) return;
           trimSongIdx.value = idx;
           trimSongTitle.value = `${song.artist} - ${song.title}`;
           trimVideoUrl.value = `/api/media/${idx}?t=${Date.now()}`;
-          trimStartSec.value = parseTimeStr(song.start);
-          trimEndSec.value = parseTimeStr(song.end);
+          if (Array.isArray(song.clips) && song.clips.length > 0) {
+            trimClips.value = song.clips.map((c) => ({
+              start: c.start || '0:00',
+              end: c.end || '0:30',
+              reason: c.reason || '',
+            }));
+          } else {
+            trimClips.value = [
+              {
+                start: song.start || '0:00',
+                end: song.end || '0:30',
+                reason: song.reason || '',
+              },
+            ];
+          }
+          const targetIdx = Math.min(Math.max(0, initialClipIdx), trimClips.value.length - 1);
+          trimActiveClipIdx.value = targetIdx;
+          const active = trimClips.value[targetIdx];
+          trimStartSec.value = parseTimeStr(active.start);
+          trimEndSec.value = parseTimeStr(active.end);
+          trimClipReason.value = active.reason || '';
           trimCurrentSec.value = trimStartSec.value;
           trimTotalSec.value = 0;
           trimLoopPlaying.value = false;
@@ -1189,19 +1433,43 @@
         const applyTrimChanges = async () => {
           const idx = trimSongIdx.value;
           if (idx < 0 || idx >= playlist.value.songs.length) return;
-          playlist.value.songs[idx].start = formatSec(trimStartSec.value);
-          playlist.value.songs[idx].end = formatSec(trimEndSec.value);
-          playlist.value.songs[idx].lyrics_offset = trimLyricsOffset.value;
-          await savePlaylist();
-          if (trimRebuildSpectrum.value) {
-            fetch(`/api/spectrum/${idx}`, { method: 'POST' }).catch(() => {});
+          syncActiveTrimToBuffer();
+          const song = playlist.value.songs[idx];
+          if (trimClips.value.length > 1) {
+            song.clips = trimClips.value.map((c) => ({ ...c }));
+            song.start = trimClips.value[0].start;
+            song.end = trimClips.value[0].end;
+          } else {
+            const only = trimClips.value[0] || {
+              start: formatSec(trimStartSec.value),
+              end: formatSec(trimEndSec.value),
+              reason: trimClipReason.value,
+            };
+            song.start = only.start;
+            song.end = only.end;
+            song.reason = only.reason;
+            song.clips = [];
           }
+          song.lyrics_offset = trimLyricsOffset.value;
+          await savePlaylist();
           closeTrimModal();
         };
 
         const getDefaultQuery = (song) => {
           const cleanTitle = (song.title || '').split('(')[0].split('（')[0].trim().slice(0, 30);
           return `${cleanTitle} ${song.artist || ''} MV`.trim();
+        };
+
+        const isCandidatesExpanded = (idx, song) => {
+          if (typeof candidatesExpandedMap.value[idx] === 'boolean') {
+            return candidatesExpandedMap.value[idx];
+          }
+          return !song?.has_file;
+        };
+
+        const toggleCandidatesPanel = (idx, song) => {
+          const next = !isCandidatesExpanded(idx, song);
+          candidatesExpandedMap.value[idx] = next;
         };
 
         const setPlatform = (idx, plat) => {
@@ -1214,24 +1482,21 @@
             const res = await fetch('/api/playlist');
             const data = await res.json();
             if (!data.intro) {
-              data.intro = { enabled: false, text: '', duration: 8, bg_mode: 'black' };
+              data.intro = { enabled: false, text: '', auto_duration: true, duration: 8, bg_mode: 'blur_first_song' };
+            } else if (typeof data.intro.auto_duration !== 'boolean') {
+              data.intro.auto_duration = true;
+            }
+            if (!data.transition) {
+              data.transition = { video_style: 'cross_dissolve', video_duration: 0.6, audio_duration: 0.8 };
             }
             for (const s of (data.songs || [])) {
-              if (!s.template) s.template = 'annual';
+              if (!s.transition_style) s.transition_style = 'inherit';
+              if (!s.visual_effect) s.visual_effect = 'auto';
+              if (!Array.isArray(s.clips)) s.clips = [];
             }
             playlist.value = data;
           } catch (e) {
             console.error('Failed to load playlist:', e);
-          }
-        };
-
-        const loadRenderers = async () => {
-          try {
-            const res = await fetch('/api/renderers');
-            const data = await res.json();
-            if (data.renderers) renderersList.value = data.renderers;
-          } catch (e) {
-            console.error('Failed to load renderers:', e);
           }
         };
 
@@ -1255,24 +1520,130 @@
           }
         };
 
-        const renderSpecialAll = async () => {
+        const openRemotionStudio = async () => {
           try {
             await savePlaylist();
-            const res = await fetch('/api/render_special', {
+            const res = await fetch('/api/remotion/studio', { method: 'POST' });
+            const data = await res.json();
+            if (res.ok && data.url) {
+              window.open(data.url, '_blank');
+            } else {
+              alert(data.message || '启动 Remotion Studio 失败');
+            }
+          } catch (e) {
+            alert('启动 Remotion Studio 出错: ' + e);
+          }
+        };
+
+        const renderRemotionVideo = async () => {
+          try {
+            await savePlaylist();
+            const res = await fetch('/api/remotion/render', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ index: null }),
+              body: JSON.stringify({}),
             });
             const data = await res.json();
             if (res.ok) {
               showLogs.value = true;
               pollStatus();
             } else {
-              alert(data.message || '启动特殊渲染失败');
+              alert(data.message || '启动 Remotion 渲染失败');
             }
           } catch (e) {
-            alert('请求特殊渲染出错: ' + e);
+            alert('请求 Remotion 渲染出错: ' + e);
           }
+        };
+
+        const cancelRemotionRender = async () => {
+          try {
+            const res = await fetch('/api/remotion/cancel', { method: 'POST' });
+            const data = await res.json();
+            if (!res.ok) {
+              alert(data.message || '停止渲染失败');
+            }
+          } catch (e) {
+            alert('停止渲染出错: ' + e);
+          }
+        };
+
+        const addSongClip = (idx) => {
+          const song = playlist.value.songs[idx];
+          if (!song) return;
+          if (!Array.isArray(song.clips)) song.clips = [];
+          if (song.clips.length === 0) {
+            song.clips.push({
+              start: song.start || '0:00',
+              end: song.end || '0:30',
+              reason: song.reason || '',
+            });
+          }
+          song.clips.push({
+            start: song.end || '0:30',
+            end: song.end || '0:50',
+            reason: '',
+          });
+          savePlaylist();
+        };
+
+        const removeSongClip = (idx, clipIdx) => {
+          const song = playlist.value.songs[idx];
+          if (!song || !Array.isArray(song.clips)) return;
+          song.clips.splice(clipIdx, 1);
+          if (song.clips.length === 1) {
+            song.start = song.clips[0].start;
+            song.end = song.clips[0].end;
+            if (song.clips[0].reason) song.reason = song.clips[0].reason;
+            song.clips = [];
+          }
+          savePlaylist();
+        };
+
+        const uploadLocalMedia = async (idx, event) => {
+          const file = event?.target?.files?.[0];
+          if (!file) return;
+          try {
+            const fd = new FormData();
+            fd.append('file', file);
+            const res = await fetch(`/api/upload_media/${idx}`, {
+              method: 'POST',
+              body: fd,
+            });
+            const data = await res.json();
+            if (!res.ok) {
+              alert(data.detail || '导入本地视频失败');
+              return;
+            }
+            await loadPlaylistData();
+            showLogs.value = true;
+            pollStatus();
+          } catch (e) {
+            alert('导入本地视频出错: ' + e);
+          } finally {
+            if (event?.target) event.target.value = '';
+          }
+        };
+
+        const recalcIntroDuration = (shouldSave = false) => {
+          const intro = playlist.value?.intro;
+          if (!intro || intro.auto_duration === false) {
+            if (shouldSave) savePlaylist();
+            return;
+          }
+          const raw = (intro.text || '').trim();
+          const pages = raw
+            ? raw.split(/\r?\n\s*\r?\n|^---+$/m).map((p) => p.trim()).filter(Boolean)
+            : [''];
+          const total = pages.reduce((sum, p) => {
+            const chars = p.replace(/\s+/g, '').length;
+            return sum + Math.max(2.8, Math.min(12, 1.3 + chars * 0.2));
+          }, 0);
+          intro.duration = Math.max(3, Math.round(total * 2) / 2);
+          if (shouldSave) savePlaylist();
+        };
+
+        const onIntroTextOrModeChange = () => {
+          recalcIntroDuration(true);
         };
 
         const savePlaylist = async () => {
@@ -1638,6 +2009,38 @@
           }
         };
 
+        const importNeteaseSourceFile = async (event) => {
+          const file = event?.target?.files?.[0];
+          if (!file) return;
+          savingNeteaseAudioCfg.value = true;
+          try {
+            const text = await file.text();
+            const res = await fetch('/api/netease_audio/config', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                script_text: text,
+                default_quality: neteaseAudioQuality.value,
+              }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+              alert(data.detail || '解析音源文件失败，请确认文件内包含 API_URL / API_KEY');
+              return;
+            }
+            neteaseAudioCfg.value = data;
+            neteaseFormUrl.value = data.api_url || '';
+            neteaseFormKey.value = '';
+            neteaseFormScript.value = '';
+            alert(`已一键解析并保存「${file.name}」\nAPI_URL: ${data.api_url}`);
+          } catch (e) {
+            alert('导入音源文件出错: ' + e);
+          } finally {
+            savingNeteaseAudioCfg.value = false;
+            if (event?.target) event.target.value = '';
+          }
+        };
+
         const downloadNeteaseSingle = async (idx, mode) => {
           if (!neteaseAudioCfg.value.configured) {
             alert('请先在顶部「网易云音源」中配置音源 API');
@@ -1700,7 +2103,6 @@
 
         onMounted(() => {
           loadPlaylistData();
-          loadRenderers();
           loadBiliStatus();
           loadNeteaseAudioConfig();
           pollStatus();
@@ -1708,12 +2110,16 @@
 
         return {
           playlist,
-          renderersList,
           candidatesMap,
+          candidatesExpandedMap,
+          isCandidatesExpanded,
+          toggleCandidatesPanel,
           platformMap,
           customQueries,
           loadingCandidates,
           showLogs,
+          showToolsMenu,
+          songActionMenuIdx,
           status,
           showNeteaseModal,
           neteaseUrl,
@@ -1730,6 +2136,7 @@
           openNeteaseAudioModal,
           saveNeteaseQualityOnly,
           saveNeteaseAudioConfig,
+          importNeteaseSourceFile,
           downloadNeteaseSingle,
           downloadNeteaseBatch,
           biliUser,
@@ -1761,9 +2168,14 @@
           trimCurrentSec,
           trimTotalSec,
           trimLoopPlaying,
-          trimRebuildSpectrum,
           trimLyricsLines,
           trimLyricsOffset,
+          trimClips,
+          trimActiveClipIdx,
+          trimClipReason,
+          switchTrimClip,
+          addTrimClip,
+          removeTrimClip,
           refetchTrimLyrics,
           nudgeLyricsOffset,
           alignLyricToCurrent,
@@ -1788,8 +2200,15 @@
           downloadSingle,
           downloadAll,
           preprocessAll,
-          renderSpecialAll,
+          openRemotionStudio,
+          renderRemotionVideo,
+          cancelRemotionRender,
           savePlaylist,
+          recalcIntroDuration,
+          onIntroTextOrModeChange,
+          uploadLocalMedia,
+          addSongClip,
+          removeSongClip,
           submitNetease,
         };
       }

@@ -12,11 +12,15 @@ Features:
 
 import json
 import os
+import re
+import shutil
+import signal
+import subprocess
 import threading
 import time
 from pathlib import Path
 from typing import Optional
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -24,7 +28,7 @@ from pydantic import BaseModel
 import uvicorn
 import yt_dlp
 
-from download import (
+from backend.download import (
     download_mv,
     is_bilibili_url,
     slug,
@@ -32,26 +36,24 @@ from download import (
     resolve_file_path,
     to_relative_path,
 )
-from netease import import_netease_playlist
-from netease_audio import (
+from backend.netease import import_netease_playlist
+from backend.netease_audio import (
     download_netease_for_song,
     get_music_source_status,
     parse_lx_script_text,
     save_music_source_config,
 )
-from bilibili import (
+from backend.bilibili import (
     search_bilibili,
     generate_bilibili_qr,
     poll_bilibili_qr,
     get_bilibili_login_status,
     clear_bilibili_cookies,
 )
-from preprocess import preprocess_song
-from spectrum import render_spectrum_mov
-from lyrics import fetch_and_save_lyrics, export_timeline_srt
-from analyze_visuals import analyze_song_visuals
-from renderers import list_renderers, render_song_clip
-from schema import load_playlist as load_playlist_model, save_playlist as save_playlist_model
+from backend.preprocess import preprocess_song
+from backend.lyrics import fetch_and_save_lyrics
+from backend.analyze_visuals import analyze_song_visuals
+from backend.schema import load_playlist as load_playlist_model, save_playlist as save_playlist_model
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_PATH = Path(BASE_DIR)
@@ -109,10 +111,6 @@ def save_playlist(data: dict):
             elif os.path.isabs(fp):
                 song["file_path"] = to_relative_path(fp)
     save_playlist_model(data, PLAYLIST_FILE)
-    try:
-        export_timeline_srt(load_playlist_model(PLAYLIST_FILE), BASE_PATH)
-    except Exception:
-        pass
 
 
 @app.get("/")
@@ -121,7 +119,7 @@ def serve_index():
     index_file = os.path.join(WEB_DIR, "index.html")
     if not os.path.isfile(index_file):
         raise HTTPException(status_code=404, detail="index.html not found")
-    return FileResponse(index_file)
+    return FileResponse(index_file, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/media/{index}")
@@ -139,6 +137,31 @@ def stream_song_media(index: int):
     raise HTTPException(status_code=404, detail="Local media file not found")
 
 
+@app.post("/api/upload_media/{index}")
+async def upload_local_song_media(index: int, file: UploadFile = File(...)):
+    """Upload a local video file (e.g. live performance) into raw/ and bind it to the song."""
+    playlist = load_playlist_model(PLAYLIST_FILE)
+    if index < 0 or index >= len(playlist.songs):
+        raise HTTPException(status_code=404, detail="Song index out of range")
+
+    song = playlist.songs[index]
+    raw_dir = BASE_PATH / "raw"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    orig_ext = Path(file.filename or "video.mp4").suffix.lower() or ".mp4"
+    safe_name = f"{slug(song.title, song.artist)}_local{orig_ext}"
+    dest = raw_dir / safe_name
+
+    with open(dest, "wb") as f:
+        while chunk := await file.read(1024 * 1024):
+            f.write(chunk)
+
+    song.file_path = f"raw/{safe_name}"
+    song.normalized_path = ""
+    save_playlist_model(playlist, PLAYLIST_FILE)
+    log_task(f"📁 已导入本地视频 [{song.title}]: {song.file_path}")
+    return {"status": "ok", "file_path": song.file_path}
+
+
 @app.get("/api/audio/{index}")
 def download_song_audio_file(index: int):
     """Download or stream the saved pure NetEase audio file for a song."""
@@ -151,27 +174,6 @@ def download_song_audio_file(index: int):
     if ap and os.path.isfile(ap):
         return FileResponse(ap, filename=os.path.basename(ap))
     raise HTTPException(status_code=404, detail="Local audio file not found")
-
-
-@app.post("/api/spectrum/{index}")
-def rebuild_single_spectrum(index: int):
-    """Re-render frosted-glass spectrum overlay for a single song after start/end trim changes."""
-    playlist = load_playlist_model(PLAYLIST_FILE)
-    if index < 0 or index >= len(playlist.songs):
-        raise HTTPException(status_code=404, detail="Song index out of range")
-
-    def _run():
-        song = playlist.songs[index]
-        log_task(f"🎨 重新生成频谱: {song.title} ({song.start} - {song.end})")
-        res = render_spectrum_mov(song, BASE_PATH, fps=playlist.fps, log=log_task)
-        if res:
-            save_playlist_model(playlist, PLAYLIST_FILE)
-            log_task(f"✅ 频谱更新完成: {song.title}")
-        else:
-            log_task(f"⚠️ 频谱更新失败: {song.title}")
-
-    threading.Thread(target=_run, daemon=True).start()
-    return {"status": "started"}
 
 
 @app.get("/api/lyrics/{index}")
@@ -226,8 +228,7 @@ def analyze_all_visuals_api():
                 fetch_and_save_lyrics(song, BASE_PATH, force=False, log=log_task)
                 analyze_song_visuals(song, BASE_PATH, log=log_task)
             save_playlist_model(playlist, PLAYLIST_FILE)
-            srt_path, cues = export_timeline_srt(playlist, BASE_PATH)
-            log_task(f"✅ 视觉亮度、封面律动与双语歌词分析完成！(已导出 {cues} 句原生字幕 -> {srt_path.name})")
+            log_task("✅ 视觉亮度与双语歌词分析完成！")
         except Exception as e:
             log_task(f"❌ 视觉分析异常: {e}")
         finally:
@@ -260,12 +261,8 @@ def get_playlist_api():
         song["has_cover"] = bool(cp and os.path.isfile(cp))
         np = resolve_file_path(song.get("normalized_path", ""))
         song["has_normalized"] = bool(np and os.path.isfile(np))
-        sp = resolve_file_path(song.get("pre_rendered_clip", ""))
-        song["has_pre_rendered"] = bool(sp and os.path.isfile(sp))
         lp = resolve_file_path(song.get("lyrics_path", ""))
         song["has_lyrics"] = bool(lp and os.path.isfile(lp))
-        bp = resolve_file_path(song.get("beat_path", ""))
-        song["has_beat"] = bool(bp and os.path.isfile(bp))
         ap = resolve_file_path(song.get("audio_path", ""))
         song["has_audio"] = bool(ap and os.path.isfile(ap))
         if song["has_audio"]:
@@ -807,30 +804,6 @@ def get_status_api():
         return dict(tasks_state)
 
 
-@app.get("/api/renderers")
-def get_renderers_api():
-    """List built-in annual template and all registered special clip renderers."""
-    items = [
-        {
-            "name": "annual",
-            "description": "年度歌单主模板（Pr 原生 .mogrt + 底部毛玻璃）",
-            "ready": True,
-            "message": "Pr 主模板",
-        }
-    ]
-    for name, renderer in list_renderers().items():
-        ready, msg = renderer.check_readiness(BASE_PATH)
-        items.append(
-            {
-                "name": name,
-                "description": renderer.description,
-                "ready": ready,
-                "message": msg,
-            }
-        )
-    return {"renderers": items}
-
-
 def _worker_preprocess(force: bool):
     with task_lock:
         tasks_state["is_downloading"] = True
@@ -869,64 +842,188 @@ def preprocess_api(req: PreprocessRequest):
     return {"status": "started", "message": "已在后台启动预处理"}
 
 
-def _worker_render_special(index: Optional[int]):
+# ---------------------------------------------------------------------------
+# Remotion Studio & Full-Video Render Integration
+# ---------------------------------------------------------------------------
+_remotion_studio_proc: Optional[subprocess.Popen] = None
+
+
+def _remotion_env() -> dict[str, str]:
+    env = os.environ.copy()
+    extra_paths = ["/opt/homebrew/bin", "/usr/local/bin"]
+    current_path = env.get("PATH", "")
+    missing = [p for p in extra_paths if p not in current_path.split(os.pathsep)]
+    if missing:
+        env["PATH"] = os.pathsep.join(missing + [current_path])
+    return env
+
+
+def _npx_cmd() -> str:
+    cmd = "npx.cmd" if os.name == "nt" else "npx"
+    return shutil.which(cmd, path=_remotion_env().get("PATH", "")) or cmd
+
+
+def _is_port_open(port: int) -> bool:
+    import socket
+
+    for host in ("127.0.0.1", "::1"):
+        try:
+            with socket.create_connection((host, port), timeout=0.4):
+                return True
+        except OSError:
+            continue
+    return False
+
+
+@app.post("/api/remotion/studio")
+def start_remotion_studio():
+    """Start Remotion Studio on port 3000 for 1:1 live preview."""
+    global _remotion_studio_proc
+    remotion_dir = BASE_PATH / "remotion"
+    if not remotion_dir.exists():
+        return JSONResponse(status_code=404, content={"message": "remotion/ 目录不存在"})
+
+    if _is_port_open(3000):
+        return {"status": "running", "url": "http://localhost:3000"}
+
+    if _remotion_studio_proc is None or _remotion_studio_proc.poll() is not None:
+        log_file = BASE_PATH / "remotion" / "studio.log"
+        lf = open(log_file, "w", encoding="utf-8")
+        _remotion_studio_proc = subprocess.Popen(
+            [_npx_cmd(), "remotion", "studio", "src/index.ts", "--port", "3000"],
+            cwd=str(remotion_dir),
+            env=_remotion_env(),
+            stdin=subprocess.DEVNULL,
+            stdout=lf,
+            stderr=subprocess.STDOUT,
+        )
+
+    # Wait up to 15s for Remotion Studio to bind port 3000 before opening browser tab
+    for _ in range(30):
+        if _is_port_open(3000):
+            return {"status": "started", "url": "http://localhost:3000"}
+        if _remotion_studio_proc.poll() is not None:
+            return JSONResponse(
+                status_code=500,
+                content={"message": "Remotion Studio 启动失败，请查看 remotion/studio.log"},
+            )
+        time.sleep(0.5)
+
+    return JSONResponse(
+        status_code=504,
+        content={"message": "Remotion Studio 启动超时，请查看 remotion/studio.log"},
+    )
+
+
+_remotion_render_proc: Optional[subprocess.Popen] = None
+_remotion_render_cancelled: bool = False
+
+
+def _worker_remotion_render(output_name: Optional[str]):
+    global _remotion_render_proc, _remotion_render_cancelled
+    _remotion_render_cancelled = False
     with task_lock:
         tasks_state["is_downloading"] = True
         tasks_state["progress_percent"] = 0
+        tasks_state["current_song"] = "Remotion 全片渲染中..."
     try:
         playlist = load_playlist_model(PLAYLIST_FILE)
-        targets = (
-            [(index, playlist.songs[index])]
-            if index is not None and 0 <= index < len(playlist.songs)
-            else [(i, s) for i, s in enumerate(playlist.songs) if s.template != "annual"]
+        remotion_dir = BASE_PATH / "remotion"
+        out_dir = BASE_PATH / "output"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        safe_name = slug(output_name or playlist.output_sequence_name or "music-rec-video", "")
+        out_file = out_dir / f"{safe_name}.mp4"
+
+        cmd = [
+            _npx_cmd(),
+            "remotion",
+            "render",
+            "src/index.ts",
+            "MusicRecVideo",
+            str(out_file),
+            "--overwrite",
+        ]
+        log_task(f"🎬 启动 Remotion 渲染: {out_file.name}")
+        proc = subprocess.Popen(
+            cmd,
+            cwd=str(remotion_dir),
+            env=_remotion_env(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            start_new_session=(os.name != "nt"),
         )
-        total = len(targets)
-        if total == 0:
-            log_task("没有需要特殊模板渲染的单曲（全部为 annual 主模板）")
-            return
+        _remotion_render_proc = proc
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            line = line.strip()
+            if not line:
+                continue
+            log_task(line)
+            frame_m = re.search(r"Rendered\s+(\d+)/(\d+)", line)
+            if frame_m:
+                cur_f, tot_f = int(frame_m.group(1)), max(1, int(frame_m.group(2)))
+                with task_lock:
+                    tasks_state["progress_percent"] = min(99, int((cur_f / tot_f) * 100))
+                continue
+            m = re.search(r"(\d{1,3})%", line)
+            if m:
+                with task_lock:
+                    tasks_state["progress_percent"] = min(99, int(m.group(1)))
 
-        for step, (idx, song) in enumerate(targets):
+        ret = proc.wait()
+        if _remotion_render_cancelled:
+            log_task("⏹ Remotion 渲染已手动停止")
+        elif ret == 0 and out_file.exists():
             with task_lock:
-                tasks_state["current_song"] = f"特殊渲染 [{step+1}/{total}] {song.title}"
-                tasks_state["progress_percent"] = int((step / total) * 100)
-            out_path = BASE_PATH / "processed" / f"special_{idx+1:02d}_{slug(song.title, song.artist)}.mp4"
-            res = render_song_clip(
-                song,
-                BASE_PATH,
-                out_path,
-                playlist.resolution,
-                playlist.fps,
-            )
-            if res.success and res.output_path:
-                song.pre_rendered_clip = res.output_path.relative_to(BASE_PATH).as_posix()
-                save_playlist_model(playlist, PLAYLIST_FILE)
-                log_task(f"✓ [{song.template}] {res.message}")
-            else:
-                log_task(f"✗ [{song.template}] {song.title}: {res.message}")
-
-        with task_lock:
-            tasks_state["progress_percent"] = 100
-        log_task("🎉 特殊单曲渲染流程结束！")
+                tasks_state["progress_percent"] = 100
+            log_task(f"🎉 Remotion 成片导出成功: {out_file}")
+        else:
+            log_task(f"✗ Remotion 渲染退出码: {ret}")
     except Exception as e:
-        log_task(f"特殊渲染异常: {e}")
+        log_task(f"Remotion 渲染异常: {e}")
     finally:
+        _remotion_render_proc = None
         with task_lock:
             tasks_state["is_downloading"] = False
             tasks_state["current_song"] = ""
 
 
-class RenderSpecialRequest(BaseModel):
-    index: Optional[int] = None
+@app.post("/api/remotion/cancel")
+def cancel_remotion_render():
+    """Terminate an active Remotion render process group cleanly."""
+    global _remotion_render_proc, _remotion_render_cancelled
+    proc = _remotion_render_proc
+    if proc is None or proc.poll() is not None:
+        return {"status": "idle", "message": "当前没有正在运行的 Remotion 渲染任务"}
+    _remotion_render_cancelled = True
+    try:
+        if os.name != "nt":
+            os.killpg(proc.pid, signal.SIGTERM)
+        else:
+            proc.terminate()
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+    return {"status": "cancelled", "message": "已发送停止渲染信号"}
 
 
-@app.post("/api/render_special")
-def render_special_api(req: RenderSpecialRequest):
-    """Trigger background rendering for special-template songs (e.g. wangye_ae)."""
+class RemotionRenderRequest(BaseModel):
+    output_name: Optional[str] = None
+
+
+@app.post("/api/remotion/render")
+def remotion_render_api(req: RemotionRenderRequest):
+    """Render full playlist video via Remotion CLI into output/*.mp4."""
     if tasks_state["is_downloading"]:
         return JSONResponse(status_code=400, content={"message": "当前已有后台任务在进行中"})
-    t = threading.Thread(target=_worker_render_special, args=(req.index,), daemon=True)
+    t = threading.Thread(target=_worker_remotion_render, args=(req.output_name,), daemon=True)
     t.start()
-    return {"status": "started", "message": "已在后台启动特殊单曲渲染"}
+    return {"status": "started", "message": "已在后台启动 Remotion 全片渲染"}
 
 
 if __name__ == "__main__":

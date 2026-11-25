@@ -25,12 +25,12 @@ from urllib.parse import urlparse
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps
 import requests
 
-from download import RAW_DIR, slug, to_relative_path
-from netease import search_netease_song_id
-from preprocess import fetch_netease_cover, find_ffmpeg
-from schema import DEFAULT_PLAYLIST_PATH, SongItem, load_playlist, save_playlist
+from backend.download import RAW_DIR, slug, to_relative_path
+from backend.netease import search_netease_song_id
+from backend.preprocess import fetch_netease_cover, find_ffmpeg
+from backend.schema import DEFAULT_PLAYLIST_PATH, SongItem, load_playlist, save_playlist
 
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parent.parent
 AUDIO_DIR = BASE_DIR / "audio"
 CONFIG_FILE = BASE_DIR / "music_source_config.json"
 
@@ -72,11 +72,35 @@ def mask_api_key(key: str) -> str:
 
 
 def parse_lx_script_text(script_text: str) -> dict:
-    """Extract API_URL and API_KEY from an LX Music custom source JS file."""
-    text = script_text or ""
+    """Extract API_URL and API_KEY from either a JSON config or an LX Music custom source .js file."""
+    text = (script_text or "").strip()
+    if not text:
+        return {}
+
+    # 1. Try JSON format first (e.g. {"api_url": "...", "api_key": "..."})
+    if text.startswith("{"):
+        try:
+            data = json.loads(text)
+            if isinstance(data, dict):
+                result: dict = {}
+                url_val = data.get("api_url") or data.get("API_URL") or data.get("url")
+                key_val = data.get("api_key") or data.get("API_KEY") or data.get("key")
+                quality_val = data.get("default_quality") or data.get("quality")
+                if isinstance(url_val, str) and url_val.strip():
+                    result["api_url"] = url_val.strip().rstrip("/")
+                if isinstance(key_val, str) and key_val.strip():
+                    result["api_key"] = key_val.strip()
+                if isinstance(quality_val, str) and quality_val.strip():
+                    result["default_quality"] = quality_val.strip()
+                if result:
+                    return result
+        except Exception:
+            pass
+
+    # 2. Fallback to LX Music .js script regex extraction
     url_match = re.search(r"""API_URL\s*=\s*["']([^"']+)["']""", text)
     key_match = re.search(r"""API_KEY\s*=\s*["']([^"']+)["']""", text)
-    result: dict = {}
+    result = {}
     if url_match:
         result["api_url"] = url_match.group(1).strip().rstrip("/")
     if key_match:

@@ -1,0 +1,91 @@
+export interface ResolutionConfig {
+  width: number;
+  height: number;
+}
+
+export interface IntroConfig {
+  enabled: boolean;
+  text: string;
+  auto_duration?: boolean;
+  duration: number;
+  bg_mode: 'black' | 'blur_first_song' | 'image';
+  bg_image?: string;
+}
+
+export interface TransitionConfig {
+  video_style: 'cross_dissolve' | 'dip_to_black' | 'none' | 'custom' | string;
+  video_duration: number;
+  audio_duration: number;
+}
+
+export interface DetectedBright {
+  index?: boolean;
+  reason?: boolean;
+  bottom?: boolean;
+}
+
+export interface LyricLine {
+  time: number;
+  orig: string;
+  trans?: string;
+}
+
+export interface LyricsFile {
+  netease_id?: string;
+  title?: string;
+  artist?: string;
+  has_translation?: boolean;
+  lines: LyricLine[];
+}
+
+export interface BeatFile {
+  times?: number[];
+  energies?: number[];
+  [key: string]: unknown;
+}
+
+export interface SongClip {
+  start: string | number;
+  end: string | number;
+  reason?: string;
+}
+
+export interface SongItem {
+  title: string;
+  artist: string;
+  album?: string;
+  netease_id?: string;
+  youtube_url?: string;
+  start: string | number;
+  end: string | number;
+  clips?: SongClip[];
+  file_path?: string;
+  audio_path?: string;
+  normalized_path?: string;
+  cover_url?: string;
+  cover_path?: string;
+  reason?: string;
+  transition_style?: string;
+  visual_effect?: 'auto' | 'none' | 'beat_pulse' | 'ken_burns' | 'glitch' | 'vinyl_spin' | string;
+  display_index?: number | null;
+  lyrics_path?: string;
+  lyrics_offset?: number;
+  lyrics_enabled?: boolean;
+  shadow_boost?: 'auto' | 'normal' | 'strong';
+  detected_bright?: DetectedBright;
+}
+
+export interface PlaylistConfig {
+  output_sequence_name: string;
+  resolution: ResolutionConfig;
+  fps: number;
+  intro: IntroConfig;
+  transition: TransitionConfig;
+  songs: SongItem[];
+}
+
+export type PlaylistVideoProps = {
+  playlist: PlaylistConfig;
+  mediaBaseUrl?: string;
+  [key: string]: unknown;
+};

@@ -12,10 +12,10 @@ import re
 from pathlib import Path
 from typing import Callable
 
-from download import slug
-from netease import fetch_netease_lyrics, search_netease_song_id
-from preprocess import parse_time_str
-from schema import PlaylistConfig, SongItem, load_playlist, save_playlist
+from backend.download import slug
+from backend.netease import fetch_netease_lyrics, search_netease_song_id
+from backend.preprocess import parse_time_str
+from backend.schema import PlaylistConfig, SongItem, load_playlist, save_playlist
 
 TIME_TAG_RE = re.compile(r"\[(\d{1,3}):(\d{2})(?:\.(\d{1,3}))?\]")
 META_PREFIX_RE = re.compile(
@@ -158,7 +158,7 @@ def export_timeline_srt(
         if dur <= 0.1:
             dur = 20.0
 
-        if song.lyrics_enabled and song.lyrics_path and not song.pre_rendered_clip:
+        if song.lyrics_enabled and song.lyrics_path:
             lp = Path(song.lyrics_path)
             if not lp.is_absolute():
                 lp = project_root / lp
@@ -201,7 +201,7 @@ def export_timeline_srt(
 
 
 def main():
-    project_root = Path(__file__).resolve().parent
+    project_root = Path(__file__).resolve().parent.parent
     playlist_path = project_root / "playlist.json"
     playlist = load_playlist(playlist_path)
 

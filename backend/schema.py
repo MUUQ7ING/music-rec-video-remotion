@@ -9,7 +9,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
-DEFAULT_PLAYLIST_PATH = Path(__file__).resolve().parent / "playlist.json"
+DEFAULT_PLAYLIST_PATH = Path(__file__).resolve().parent.parent / "playlist.json"
 
 
 class ResolutionConfig(BaseModel):
@@ -28,20 +28,30 @@ class IntroConfig(BaseModel):
 
     enabled: bool = False
     text: str = ""
+    auto_duration: bool = True
     duration: float = 8.0
     bg_mode: Literal["black", "blur_first_song", "image"] = "black"
     bg_image: str = ""
 
 
 class TransitionConfig(BaseModel):
-    """Extensible song-to-song transition settings (supports future AE overlay clips)."""
+    """Song-to-song transition settings."""
 
     model_config = ConfigDict(extra="allow")
 
-    video_style: str = "cross_dissolve"  # cross_dissolve | dip_to_black | none | custom
+    video_style: str = "cross_dissolve"  # cross_dissolve | blur_slide | zoom_blur | cross_zoom | dip_to_black | flash_white | slide | wipe | flip | none
     video_duration: float = 0.6
     audio_duration: float = 0.8
-    overlay_clip: str = ""  # Optional Alpha .mov transition clip centered on cut points
+
+
+class SongClip(BaseModel):
+    """A sub-segment within a single song (for multi-drop/multi-part showcases)."""
+
+    model_config = ConfigDict(extra="allow")
+
+    start: str = "0:00"
+    end: str = "0:30"
+    reason: str = ""
 
 
 class SongItem(BaseModel):
@@ -56,15 +66,15 @@ class SongItem(BaseModel):
     youtube_url: str = ""
     start: str = "0:00"
     end: str = "0:30"
+    clips: list[SongClip] = Field(default_factory=list)
     file_path: str = ""
     audio_path: str = ""
     normalized_path: str = ""
-    spectrum_path: str = ""
     cover_url: str = ""
     cover_path: str = ""
     reason: str = ""
-    template: str = "annual"
-    pre_rendered_clip: str = ""
+    transition_style: str = "inherit"
+    visual_effect: str = "auto"
     display_index: Optional[int] = None
     # Lyrics settings
     lyrics_path: str = ""
@@ -73,9 +83,6 @@ class SongItem(BaseModel):
     # Dynamic shadow contrast (always white text + boosted dark shadow on bright backgrounds)
     shadow_boost: Literal["auto", "normal", "strong"] = "auto"
     detected_bright: dict = Field(default_factory=dict)
-    # Static cover MV beat-reactive motion
-    beat_motion: Literal["auto", "on", "off"] = "auto"
-    beat_path: str = ""
 
 
 class PlaylistConfig(BaseModel):

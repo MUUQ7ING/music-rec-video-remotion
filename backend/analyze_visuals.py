@@ -22,10 +22,8 @@ from typing import Callable
 
 import numpy as np
 
-from download import slug
-from preprocess import find_ffmpeg, parse_time_str
-from schema import SongItem, load_playlist, save_playlist
-from spectrum import extract_mono_pcm, SAMPLE_RATE
+from backend.preprocess import find_ffmpeg, parse_time_str
+from backend.schema import SongItem, load_playlist, save_playlist
 
 # Sampled analysis resolution (16:9 scaled down for ultra-fast numpy analysis)
 AN_W, AN_H = 320, 180
@@ -241,38 +239,19 @@ def analyze_song_visuals(
     bright, is_static, mad = analyze_brightness_and_static(ffmpeg, src_path, start_sec, dur_sec)
     song.detected_bright = bright
 
-    should_beat = (song.beat_motion == "on") or (song.beat_motion == "auto" and is_static)
-    out_dir = project_root / "processed"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    beat_file = out_dir / f"{slug(song.title, song.artist)}_beat.json"
-
-    if should_beat:
-        kfs = extract_beat_keyframes(ffmpeg, src_path, start_sec, dur_sec)
-        payload = {
-            "is_static": is_static,
-            "mad": mad,
-            "base_scale": 104.0,
-            "keyframes": kfs,
-        }
-        beat_file.write_text(json.dumps(payload, ensure_ascii=False) + "\n", encoding="utf-8")
-        song.beat_path = beat_file.relative_to(project_root).as_posix()
-    else:
-        song.beat_path = ""
-
     summary = {
         "title": song.title,
         "bright": bright,
         "is_static": is_static,
         "mad": mad,
-        "beat_enabled": should_beat,
     }
     if log:
-        log(f"Analyzed {song.title}: bright={bright}, static={is_static} (MAD={mad}), beat={should_beat}")
+        log(f"Analyzed {song.title}: bright={bright}, static={is_static} (MAD={mad})")
     return summary
 
 
 def main():
-    project_root = Path(__file__).resolve().parent
+    project_root = Path(__file__).resolve().parent.parent
     playlist_path = project_root / "playlist.json"
     playlist = load_playlist(playlist_path)
 

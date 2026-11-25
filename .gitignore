@@ -1,11 +1,11 @@
-# Media files & downloads
-raw/
-audio/
-covers/
-processed/
-temp/
-output/
-downloads/
+# Media files & downloads (match both directories and symlinks)
+raw
+audio
+covers
+processed
+temp
+output
+downloads
 *.mp4
 *.mov
 *.m4a
@@ -28,7 +28,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.env
-.venv/
+.venv
 env/
 venv/
 ENV/
@@ -45,3 +45,9 @@ Thumbs.db
 .vscode/
 *.swp
 *.log
+
+# Remotion build & dependencies
+remotion/node_modules/
+remotion/public/
+remotion/.remotion/
+remotion/out/

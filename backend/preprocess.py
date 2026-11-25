@@ -13,9 +13,9 @@ from typing import Callable
 from PIL import Image, ImageOps
 import requests
 
-from download import slug
-from netease import HEADERS as NETEASE_HEADERS, search_netease_cover_url
-from schema import SongItem
+from backend.download import slug
+from backend.netease import HEADERS as NETEASE_HEADERS, search_netease_cover_url
+from backend.schema import SongItem
 
 
 def find_ffmpeg() -> str | None:

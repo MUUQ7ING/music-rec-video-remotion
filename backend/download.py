@@ -18,13 +18,14 @@ import argparse
 import json
 import os
 import re
+import shutil
 import sys
 import time
 from typing import Callable
 import yt_dlp
-from netease import import_netease_playlist
+from backend.netease import import_netease_playlist
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PLAYLIST = os.path.join(BASE_DIR, "playlist.json")
 RAW_DIR = os.path.join(BASE_DIR, "raw")
 os.makedirs(RAW_DIR, exist_ok=True)
@@ -248,6 +249,9 @@ def download_mv(
 
     fmt = get_format_selector(quality, prefer_sdr=prefer_sdr)
     fmt_sort = get_format_sort(quality, prefer_sdr=prefer_sdr)
+    node_path = shutil.which("node") or shutil.which(
+        "node", path="/opt/homebrew/bin:/usr/local/bin"
+    )
     opts: dict = {
         "format": fmt,
         "format_sort": fmt_sort,
@@ -257,10 +261,28 @@ def download_mv(
         "quiet": False,
         "retries": 3,
     }
+    if node_path:
+        opts["js_runtimes"] = {"node": {"path": node_path}}
 
     if not is_bilibili_url(url):
-        _run_yt_dlp_with_retry(url, opts, max_attempts=2, log_fn=log)
-        return os.path.isfile(out_path)
+        resolved_yt_cookie = _find_local_cookie_file(cookies_file)
+        if resolved_yt_cookie:
+            log(f"[YouTube] 使用本地 Cookie 文件: {os.path.basename(resolved_yt_cookie)}")
+            opts["cookiefile"] = resolved_yt_cookie
+        elif cookies_browser and cookies_browser.lower() not in ("none", "off", "false", "0"):
+            opts["cookiesfrombrowser"] = (cookies_browser.lower(),)
+        try:
+            _run_yt_dlp_with_retry(url, opts, max_attempts=2, log_fn=log)
+            return os.path.isfile(out_path)
+        except Exception as yt_err:
+            err_lower = str(yt_err).lower()
+            if "sign in to confirm" in err_lower or "not a bot" in err_lower:
+                log(
+                    "[YouTube] 当前网络 IP 触发了 YouTube 人机验证。"
+                    "请在浏览器用扩展（如 Get cookies.txt LOCALLY）导出 YouTube 的 cookies.txt "
+                    "放到项目根目录，然后重新点击下载即可（macOS 后台不建议直接读 Chrome 钥匙串，以免弹窗卡住）。"
+                )
+            raise
 
     # Bilibili-specific headers to prevent CDN 403
     opts["http_headers"] = {"Referer": "https://www.bilibili.com/"}
@@ -392,8 +414,8 @@ def main():
                 print(f"[兜底] 未找到 MV，尝试用网易云音源 + 封面合成: {title}")
                 try:
                     from pathlib import Path
-                    from netease_audio import download_netease_for_song
-                    from schema import SongItem
+                    from backend.netease_audio import download_netease_for_song
+                    from backend.schema import SongItem
 
                     song_model = SongItem.model_validate(song)
                     res = download_netease_for_song(
@@ -441,7 +463,7 @@ def main():
     if changed:
         with open(PLAYLIST, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-        print("\n[完成] playlist.json 已更新，可以在 Premiere Pro 中运行 assemble.jsx 了。")
+        print("\n[完成] playlist.json 已更新，可在 Remotion Studio 预览或导出成片。")
 
 
 if __name__ == "__main__":
