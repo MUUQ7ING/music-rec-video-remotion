@@ -12,6 +12,7 @@ Features:
 
 import json
 import os
+import queue
 import re
 import shutil
 import signal
@@ -78,10 +79,46 @@ app.mount("/covers", StaticFiles(directory=COVERS_DIR), name="covers")
 task_lock = threading.Lock()
 tasks_state = {
     "is_downloading": False,
+    "is_rendering": False,
+    "queue_count": 0,
     "current_song": "",
     "logs": [],
     "progress_percent": 0,
 }
+
+_job_queue: queue.Queue = queue.Queue()
+
+
+def _queue_worker_loop():
+    """Sequential background queue worker for song downloads & NetEase synthesis."""
+    while True:
+        label, fn, args = _job_queue.get()
+        try:
+            fn(*args)
+        except Exception as e:
+            log_task(f"❌ 队列任务异常 ({label}): {e}")
+        finally:
+            with task_lock:
+                tasks_state["queue_count"] = max(0, tasks_state["queue_count"] - 1)
+                if tasks_state["queue_count"] == 0:
+                    tasks_state["is_downloading"] = False
+                    tasks_state["current_song"] = ""
+            _job_queue.task_done()
+
+
+_queue_thread = threading.Thread(target=_queue_worker_loop, daemon=True)
+_queue_thread.start()
+
+
+def enqueue_download_job(label: str, fn, *args):
+    """Push a download / synthesis task onto the background queue."""
+    with task_lock:
+        tasks_state["queue_count"] += 1
+        tasks_state["is_downloading"] = True
+        q_pos = tasks_state["queue_count"]
+    if q_pos > 1:
+        log_task(f"📋 已加入下载队列 (当前排队第 {q_pos} 个): {label}")
+    _job_queue.put((label, fn, args))
 
 
 def log_task(msg: str):
@@ -157,6 +194,7 @@ async def upload_local_song_media(index: int, file: UploadFile = File(...)):
 
     song.file_path = f"raw/{safe_name}"
     song.normalized_path = ""
+    song.media_source = "local"
     save_playlist_model(playlist, PLAYLIST_FILE)
     log_task(f"📁 已导入本地视频 [{song.title}]: {song.file_path}")
     return {"status": "ok", "file_path": song.file_path}
@@ -352,7 +390,7 @@ def bilibili_logout_api():
 def search_candidates_api(
     query: str = Query(..., description="Search query string"),
     platform: str = Query("all", description="Search platform: all, bilibili, or youtube"),
-    limit: int = Query(4, ge=1, le=10),
+    limit: int = Query(8, ge=1, le=20),
 ):
     """
     Search candidate videos from YouTube and Bilibili.
@@ -364,7 +402,7 @@ def search_candidates_api(
     # ── 1. Bilibili candidates ───────────────────────────────
     if platform in ("all", "bilibili"):
         try:
-            bili_limit = limit if platform == "bilibili" else min(3, limit)
+            bili_limit = limit if platform == "bilibili" else max(4, limit // 2)
             bili_results = search_bilibili(query, limit=bili_limit)
             results.extend(bili_results)
         except Exception as e:
@@ -373,7 +411,7 @@ def search_candidates_api(
     # ── 2. YouTube candidates ────────────────────────────────
     if platform in ("all", "youtube"):
         try:
-            yt_limit = limit if platform == "youtube" else min(3, limit)
+            yt_limit = limit if platform == "youtube" else max(4, limit // 2)
             opts = {
                 "quiet": True,
                 "no_warnings": True,
@@ -491,25 +529,22 @@ def _worker_download_single(index: int, force: bool, quality: str):
             log_task(f"✗ 下载失败: {title}")
     except Exception as e:
         log_task(f"下载异常: {e}")
-    finally:
-        with task_lock:
-            tasks_state["is_downloading"] = False
-            tasks_state["current_song"] = ""
 
 
 @app.post("/api/download_single")
 def download_single_api(req: DownloadSingleRequest):
-    """Trigger download for a single song."""
-    if tasks_state["is_downloading"]:
-        return JSONResponse(status_code=400, content={"message": "当前已有下载任务在进行中"})
-
-    t = threading.Thread(
-        target=_worker_download_single,
-        args=(req.index, req.force, req.quality),
-        daemon=True,
+    """Enqueue download for a single song (supports queuing multiple songs)."""
+    data = load_playlist()
+    songs = data.get("songs", [])
+    title = songs[req.index].get("title", f"#{req.index + 1}") if 0 <= req.index < len(songs) else f"#{req.index + 1}"
+    enqueue_download_job(
+        f"下载 MV - {title}",
+        _worker_download_single,
+        req.index,
+        req.force,
+        req.quality,
     )
-    t.start()
-    return {"status": "started", "message": "已在后台启动下载"}
+    return {"status": "queued", "message": f"已加入下载队列: {title}", "queue_count": tasks_state["queue_count"]}
 
 
 def _worker_download_all(force: bool, quality: str):
@@ -522,6 +557,7 @@ def _worker_download_all(force: bool, quality: str):
         total = len(songs)
 
         bili_downloads = 0
+        netease_downloads = 0
         for i, song in enumerate(songs):
             title, artist = song.get("title", ""), song.get("artist", "")
             with task_lock:
@@ -529,13 +565,51 @@ def _worker_download_all(force: bool, quality: str):
                 tasks_state["progress_percent"] = int((i / total) * 100)
 
             out_path = os.path.join(RAW_DIR, slug(title, artist) + ".mp4")
-
-            # Check if file exists
             existing_path = resolve_file_path(song.get("file_path", ""))
+            source_mode = song.get("media_source") or "auto"
+            if source_mode == "auto":
+                if existing_path and "_local." in os.path.basename(existing_path):
+                    source_mode = "local"
+                elif song.get("youtube_url", "").strip():
+                    source_mode = "video_url"
+
+            # Check if file exists (unless forced)
             if not force and existing_path and os.path.isfile(existing_path):
                 log_task(f"跳过已存在: {title}")
-                # Ensure cover & loudness normalization still exist for already-downloaded songs
                 _preprocess_after_download(i, refresh_norm=False)
+                continue
+
+            if source_mode == "local":
+                if existing_path and os.path.isfile(existing_path):
+                    _preprocess_after_download(i, refresh_norm=False)
+                else:
+                    log_task(f"⚠️ [{title}] 设为本地视频但尚未上传文件，跳过")
+                continue
+
+            if source_mode == "netease_cover":
+                if netease_downloads > 0:
+                    time.sleep(1.5)
+                try:
+                    pl_model = load_playlist_model(PLAYLIST_FILE)
+                    s_model = pl_model.songs[i]
+                    res = download_netease_for_song(
+                        song=s_model,
+                        base_dir=BASE_PATH,
+                        mode="video",
+                        quality=None,
+                        force=force,
+                        width=pl_model.resolution.width,
+                        height=pl_model.resolution.height,
+                        fps=min(pl_model.fps, 30),
+                        log_fn=log_task,
+                    )
+                    netease_downloads += 1
+                    save_playlist_model(pl_model, PLAYLIST_FILE)
+                    _preprocess_after_download(i, refresh_norm=True)
+                    log_task(f"✓ 网易云合成MV [{i+1}/{total}] {title} ({res['quality']})")
+                except Exception as ne_err:
+                    netease_downloads += 1
+                    log_task(f"✗ 网易云合成MV失败 ({title}): {ne_err}")
                 continue
 
             if force and os.path.isfile(out_path):
@@ -682,6 +756,8 @@ def _worker_netease_audio_single(index: int, mode: str, quality: Optional[str], 
             tasks_state["progress_percent"] = 80
 
         if mode == "video":
+            song.media_source = "netease_cover"
+            save_playlist_model(playlist, PLAYLIST_FILE)
             _preprocess_after_download(index, refresh_norm=True)
             log_task(f"✅ 网易云音源 + 封面合成完成: {song.title} ({res['quality']})")
         else:
@@ -691,25 +767,24 @@ def _worker_netease_audio_single(index: int, mode: str, quality: Optional[str], 
             tasks_state["progress_percent"] = 100
     except Exception as e:
         log_task(f"❌ 网易云音源下载失败: {e}")
-    finally:
-        with task_lock:
-            tasks_state["is_downloading"] = False
-            tasks_state["current_song"] = ""
 
 
 @app.post("/api/netease_audio/download_single")
 def netease_audio_download_single_api(req: NeteaseAudioSingleRequest):
-    """Trigger single-song NetEase audio download (pure audio or cover-composed 1080p MP4)."""
-    if tasks_state["is_downloading"]:
-        return JSONResponse(status_code=400, content={"message": "当前已有后台任务在进行中"})
+    """Enqueue single-song NetEase audio download (supports queuing multiple songs)."""
     mode = "audio" if req.mode == "audio" else "video"
-    t = threading.Thread(
-        target=_worker_netease_audio_single,
-        args=(req.index, mode, req.quality, req.force),
-        daemon=True,
+    playlist = load_playlist_model(PLAYLIST_FILE)
+    title = playlist.songs[req.index].title if 0 <= req.index < len(playlist.songs) else f"#{req.index + 1}"
+    label = f"网易云{'纯音频' if mode == 'audio' else '合成MV'} - {title}"
+    enqueue_download_job(
+        label,
+        _worker_netease_audio_single,
+        req.index,
+        mode,
+        req.quality,
+        req.force,
     )
-    t.start()
-    return {"status": "started", "message": "已在后台启动网易云音源下载"}
+    return {"status": "queued", "message": f"已加入队列: {label}", "queue_count": tasks_state["queue_count"]}
 
 
 class NeteaseAudioBatchRequest(BaseModel):
@@ -923,7 +998,7 @@ def _worker_remotion_render(output_name: Optional[str]):
     global _remotion_render_proc, _remotion_render_cancelled
     _remotion_render_cancelled = False
     with task_lock:
-        tasks_state["is_downloading"] = True
+        tasks_state["is_rendering"] = True
         tasks_state["progress_percent"] = 0
         tasks_state["current_song"] = "Remotion 全片渲染中..."
     try:
@@ -987,7 +1062,7 @@ def _worker_remotion_render(output_name: Optional[str]):
     finally:
         _remotion_render_proc = None
         with task_lock:
-            tasks_state["is_downloading"] = False
+            tasks_state["is_rendering"] = False
             tasks_state["current_song"] = ""
 
 
@@ -1019,8 +1094,8 @@ class RemotionRenderRequest(BaseModel):
 @app.post("/api/remotion/render")
 def remotion_render_api(req: RemotionRenderRequest):
     """Render full playlist video via Remotion CLI into output/*.mp4."""
-    if tasks_state["is_downloading"]:
-        return JSONResponse(status_code=400, content={"message": "当前已有后台任务在进行中"})
+    if tasks_state["is_rendering"] or tasks_state["is_downloading"]:
+        return JSONResponse(status_code=400, content={"message": "当前已有任务在进行中，请稍候"})
     t = threading.Thread(target=_worker_remotion_render, args=(req.output_name,), daemon=True)
     t.start()
     return {"status": "started", "message": "已在后台启动 Remotion 全片渲染"}

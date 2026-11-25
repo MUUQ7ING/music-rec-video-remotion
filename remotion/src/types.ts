@@ -48,6 +48,8 @@ export interface SongClip {
   start: string | number;
   end: string | number;
   reason?: string;
+  reason_mode?: 'auto' | 'manual';
+  reason_timings?: number[];
 }
 
 export interface SongItem {
@@ -56,6 +58,7 @@ export interface SongItem {
   album?: string;
   netease_id?: string;
   youtube_url?: string;
+  media_source?: 'auto' | 'video_url' | 'netease_cover' | 'local';
   start: string | number;
   end: string | number;
   clips?: SongClip[];
@@ -65,6 +68,8 @@ export interface SongItem {
   cover_url?: string;
   cover_path?: string;
   reason?: string;
+  reason_mode?: 'auto' | 'manual';
+  reason_timings?: number[];
   transition_style?: string;
   visual_effect?: 'auto' | 'none' | 'beat_pulse' | 'ken_burns' | 'glitch' | 'vinyl_spin' | string;
   display_index?: number | null;

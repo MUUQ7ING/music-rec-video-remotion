@@ -52,6 +52,8 @@ class SongClip(BaseModel):
     start: str = "0:00"
     end: str = "0:30"
     reason: str = ""
+    reason_mode: Literal["auto", "manual"] = "auto"
+    reason_timings: list[float] = Field(default_factory=list)
 
 
 class SongItem(BaseModel):
@@ -64,6 +66,7 @@ class SongItem(BaseModel):
     album: str = ""
     netease_id: str = ""
     youtube_url: str = ""
+    media_source: Literal["auto", "video_url", "netease_cover", "local"] = "auto"
     start: str = "0:00"
     end: str = "0:30"
     clips: list[SongClip] = Field(default_factory=list)
@@ -73,6 +76,8 @@ class SongItem(BaseModel):
     cover_url: str = ""
     cover_path: str = ""
     reason: str = ""
+    reason_mode: Literal["auto", "manual"] = "auto"
+    reason_timings: list[float] = Field(default_factory=list)
     transition_style: str = "inherit"
     visual_effect: str = "auto"
     display_index: Optional[int] = None

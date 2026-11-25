@@ -173,3 +173,69 @@ const FlashWhiteComponent: React.FC<TransitionPresentationComponentProps<EmptyPr
 export function cssFlashWhite(): TransitionPresentation<EmptyProps> {
   return { component: FlashWhiteComponent, props: {} };
 }
+
+/** High-speed camera Whip Pan (horizontal whip with mid-point blur & subtle scale dip) */
+const WhipPanComponent: React.FC<TransitionPresentationComponentProps<EmptyProps>> = ({
+  children,
+  presentationDirection,
+  presentationProgress,
+}) => {
+  const isEntering = presentationDirection === 'entering';
+  const tx = isEntering
+    ? interpolate(presentationProgress, [0, 1], [100, 0])
+    : interpolate(presentationProgress, [0, 1], [0, -100]);
+  const midIntensity = Math.sin(presentationProgress * Math.PI);
+  const blur = midIntensity * 16;
+  const scale = 1 - midIntensity * 0.06;
+
+  return (
+    <AbsoluteFill
+      style={{
+        transform: `translate3d(${tx}%, 0, 0) scale(${scale})`,
+        filter: blur > 0.3 ? `blur(${blur}px)` : undefined,
+        willChange: 'transform',
+      }}
+    >
+      {children}
+    </AbsoluteFill>
+  );
+};
+
+export function cssWhipPan(): TransitionPresentation<EmptyProps> {
+  return { component: WhipPanComponent, props: {} };
+}
+
+/** Cinematic Curtain Split expanding from center horizontally */
+const CurtainSplitComponent: React.FC<TransitionPresentationComponentProps<EmptyProps>> = ({
+  children,
+  presentationDirection,
+  presentationProgress,
+}) => {
+  if (presentationDirection === 'exiting') {
+    const brightness = interpolate(presentationProgress, [0, 1], [1, 0.7]);
+    return (
+      <AbsoluteFill style={{ filter: `brightness(${brightness})` }}>
+        {children}
+      </AbsoluteFill>
+    );
+  }
+
+  const insetX = interpolate(presentationProgress, [0, 1], [50, 0]);
+  const scale = interpolate(presentationProgress, [0, 1], [1.05, 1]);
+
+  return (
+    <AbsoluteFill
+      style={{
+        clipPath: `inset(0% ${insetX}% 0% ${insetX}%)`,
+        transform: `scale(${scale})`,
+        willChange: 'clip-path, transform',
+      }}
+    >
+      {children}
+    </AbsoluteFill>
+  );
+};
+
+export function cssCurtainSplit(): TransitionPresentation<EmptyProps> {
+  return { component: CurtainSplitComponent, props: {} };
+}

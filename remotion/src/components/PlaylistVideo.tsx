@@ -4,25 +4,31 @@ import {
   TransitionSeries,
   type TransitionPresentation,
   linearTiming,
+  springTiming,
 } from '@remotion/transitions';
 import { fade } from '@remotion/transitions/fade';
 import { flip } from '@remotion/transitions/flip';
-import { slide } from '@remotion/transitions/slide';
-import { wipe } from '@remotion/transitions/wipe';
 import type { PlaylistVideoProps } from '../types';
 import {
   cssBlurSlide,
   cssCrossZoom,
+  cssCurtainSplit,
   cssDipToBlack,
   cssFlashWhite,
+  cssWhipPan,
   cssZoomBlur,
 } from '../utils/customTransitions';
 import { expandPlaylistSegments } from '../utils/segments';
+import { LightLeakOverlay } from './LightLeakOverlay';
 import { SongSegment } from './SongSegment';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function resolvePresentation(style: string): TransitionPresentation<any> {
   switch (style) {
+    case 'whip_pan':
+      return cssWhipPan();
+    case 'curtain_split':
+      return cssCurtainSplit();
     case 'blur_slide':
       return cssBlurSlide();
     case 'zoom_blur':
@@ -33,16 +39,28 @@ function resolvePresentation(style: string): TransitionPresentation<any> {
       return cssDipToBlack();
     case 'flash_white':
       return cssFlashWhite();
-    case 'slide':
-      return slide({ direction: 'from-right' });
-    case 'wipe':
-      return wipe({ direction: 'from-left' });
     case 'flip':
       return flip({ direction: 'from-right' });
     case 'cross_dissolve':
     default:
       return fade();
   }
+}
+
+function resolveTiming(style: string, durationInFrames: number) {
+  const springStyles = new Set([
+    'whip_pan',
+    'curtain_split',
+    'blur_slide',
+    'flip',
+  ]);
+  if (springStyles.has(style)) {
+    return springTiming({
+      config: { damping: 200 },
+      durationInFrames,
+    });
+  }
+  return linearTiming({ durationInFrames });
 }
 
 export const PlaylistVideo: React.FC<PlaylistVideoProps> = ({
@@ -75,10 +93,18 @@ export const PlaylistVideo: React.FC<PlaylistVideoProps> = ({
             {seg.transitionAfterFrames > 0 ? (
               <TransitionSeries.Transition
                 presentation={resolvePresentation(seg.transitionAfterStyle)}
-                timing={linearTiming({
-                  durationInFrames: seg.transitionAfterFrames,
-                })}
+                timing={resolveTiming(
+                  seg.transitionAfterStyle,
+                  seg.transitionAfterFrames,
+                )}
               />
+            ) : seg.overlayAfterFrames > 0 ? (
+              <TransitionSeries.Overlay durationInFrames={seg.overlayAfterFrames}>
+                <LightLeakOverlay
+                  seed={seg.overlayAfterStyle === 'light_leak_neon' ? 5 : 2}
+                  hueShift={seg.overlayAfterStyle === 'light_leak_neon' ? 240 : 0}
+                />
+              </TransitionSeries.Overlay>
             ) : null}
           </React.Fragment>
         ))}

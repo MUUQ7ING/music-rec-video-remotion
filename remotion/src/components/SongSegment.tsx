@@ -12,6 +12,7 @@ import {
 import type { IntroConfig, LyricsFile, SongClip, SongItem } from '../types';
 import {
   computeIntroTiming,
+  computeReasonTimeline,
   pad2,
   parseTime,
   resolveAssetUrl,
@@ -95,6 +96,14 @@ export const SongSegment: React.FC<SongSegmentProps> = ({
     clipOverride && clipOverride.reason && clipOverride.reason.trim()
       ? clipOverride.reason
       : song.reason;
+  const activeReasonMode =
+    clipOverride && clipOverride.reason && clipOverride.reason.trim()
+      ? clipOverride.reason_mode ?? song.reason_mode
+      : song.reason_mode;
+  const activeReasonTimings =
+    clipOverride && clipOverride.reason && clipOverride.reason.trim()
+      ? clipOverride.reason_timings ?? song.reason_timings
+      : song.reason_timings;
   const startSec = parseTime(activeStart);
   const startFrom = Math.max(0, Math.round(startSec * fps));
 
@@ -126,6 +135,55 @@ export const SongSegment: React.FC<SongSegmentProps> = ({
   const displayNum = song.display_index ?? index + 1;
   const indexText = `#${pad2(displayNum)}`;
   const progressPct = Math.min(100, Math.max(0, (uiElapsed / uiDuration) * 100));
+
+  const reasonSlices = useMemo(
+    () =>
+      computeReasonTimeline(
+        activeReason,
+        activeReasonMode,
+        activeReasonTimings,
+        uiDuration,
+        fps,
+      ),
+    [activeReason, activeReasonMode, activeReasonTimings, uiDuration, fps],
+  );
+
+  let currentReasonText = '';
+  let reasonOpacity = uiOpacity;
+  let reasonTranslateY = 0;
+  if (reasonSlices.length === 1) {
+    currentReasonText = reasonSlices[0].text;
+  } else if (reasonSlices.length > 1) {
+    let activeSlice = reasonSlices[reasonSlices.length - 1];
+    for (let i = 0; i < reasonSlices.length; i++) {
+      if (uiElapsed < reasonSlices[i].startFrame + reasonSlices[i].lengthFrames) {
+        activeSlice = reasonSlices[i];
+        break;
+      }
+    }
+    if (uiElapsed >= activeSlice.startFrame) {
+      currentReasonText = activeSlice.text;
+      const localF = uiElapsed - activeSlice.startFrame;
+      const inF = Math.min(Math.round(0.4 * fps), Math.floor(activeSlice.lengthFrames / 3));
+      const outF = Math.min(Math.round(0.35 * fps), Math.floor(activeSlice.lengthFrames / 3));
+      const isLastSlice = activeSlice === reasonSlices[reasonSlices.length - 1];
+      const localAlpha = isLastSlice
+        ? interpolate(localF, [0, inF], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+        : interpolate(
+            localF,
+            [0, inF, activeSlice.lengthFrames - outF, activeSlice.lengthFrames],
+            [0, 1, 1, 0],
+            { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' },
+          );
+      reasonOpacity = uiOpacity * localAlpha;
+      reasonTranslateY = interpolate(localF, [0, inF], [10, 0], {
+        extrapolateLeft: 'clamp',
+        extrapolateRight: 'clamp',
+      });
+    } else {
+      reasonOpacity = 0;
+    }
+  }
 
   const isBottomBright =
     song.shadow_boost === 'strong' ||
@@ -228,8 +286,8 @@ export const SongSegment: React.FC<SongSegmentProps> = ({
         {indexText}
       </div>
 
-      {/* Top-right Recommendation Reason */}
-      {activeReason ? (
+      {/* Top-right Recommendation Reason (supports multi-paragraph auto or manual timing) */}
+      {currentReasonText ? (
         <div
           style={{
             position: 'absolute',
@@ -245,10 +303,11 @@ export const SongSegment: React.FC<SongSegmentProps> = ({
             whiteSpace: 'pre-wrap',
             letterSpacing: '0.02em',
             textShadow: buildShadow(Boolean(song.detected_bright?.reason), song.shadow_boost),
-            opacity: uiOpacity,
+            opacity: reasonOpacity,
+            transform: `translateY(${reasonTranslateY}px)`,
           }}
         >
-          {activeReason}
+          {currentReasonText}
         </div>
       ) : null}
 

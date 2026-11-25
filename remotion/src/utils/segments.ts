@@ -9,6 +9,8 @@ export interface ExpandedSegment {
   durationFrames: number;
   transitionAfterStyle: string;
   transitionAfterFrames: number;
+  overlayAfterStyle: string;
+  overlayAfterFrames: number;
   audioInFrames: number;
   audioOutFrames: number;
 }
@@ -35,7 +37,15 @@ export function expandPlaylistSegments(
     const clips: SongClip[] =
       song.clips && song.clips.length > 0
         ? song.clips
-        : [{ start: song.start, end: song.end, reason: song.reason }];
+        : [
+            {
+              start: song.start,
+              end: song.end,
+              reason: song.reason,
+              reason_mode: song.reason_mode,
+              reason_timings: song.reason_timings,
+            },
+          ];
 
     clips.forEach((clip, clipIndex) => {
       const secs = getSongDurationSecs(clip.start, clip.end);
@@ -70,6 +80,8 @@ export function expandPlaylistSegments(
         ...item,
         transitionAfterStyle: 'none',
         transitionAfterFrames: 0,
+        overlayAfterStyle: 'none',
+        overlayAfterFrames: 0,
         audioInFrames,
         audioOutFrames,
       };
@@ -81,6 +93,8 @@ export function expandPlaylistSegments(
         ...item,
         transitionAfterStyle: 'cross_dissolve',
         transitionAfterFrames: Math.round(innerClipSecs * fps),
+        overlayAfterStyle: 'none',
+        overlayAfterFrames: 0,
         audioInFrames,
         audioOutFrames,
       };
@@ -91,11 +105,27 @@ export function expandPlaylistSegments(
       next.song.transition_style && next.song.transition_style !== 'inherit'
         ? next.song.transition_style
         : defaultStyle;
+
+    // Light leak uses TransitionSeries.Overlay (does not shorten timeline)
+    if (style === 'light_leak' || style === 'light_leak_neon') {
+      return {
+        ...item,
+        transitionAfterStyle: 'none',
+        transitionAfterFrames: 0,
+        overlayAfterStyle: style,
+        overlayAfterFrames: Math.round(Math.max(defaultSecs, 0.7) * fps),
+        audioInFrames,
+        audioOutFrames,
+      };
+    }
+
     const frames = style === 'none' ? 0 : Math.round(defaultSecs * fps);
     return {
       ...item,
       transitionAfterStyle: style,
       transitionAfterFrames: frames,
+      overlayAfterStyle: 'none',
+      overlayAfterFrames: 0,
       audioInFrames,
       audioOutFrames,
     };
