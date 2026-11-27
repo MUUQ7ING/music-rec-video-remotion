@@ -48,7 +48,10 @@ Thumbs.db
 *.log
 
 # Remotion build & dependencies
-remotion/node_modules/
+/remotion/node_modules
 remotion/public/
 remotion/.remotion/
 remotion/out/
+
+/web/node_modules
+/remotion/build/

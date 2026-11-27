@@ -12,11 +12,12 @@ import json
 import os
 import re
 import sys
+from pathlib import Path
 import requests
 
-PLAYLIST_FILE = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "playlist.json"
-)
+from backend.schema import DEFAULT_PLAYLIST_PATH, save_playlist as save_playlist_model
+
+PLAYLIST_FILE = str(DEFAULT_PLAYLIST_PATH)
 
 HEADERS = {
     "User-Agent": (
@@ -32,15 +33,12 @@ def extract_playlist_id(text_or_url: str) -> str | None:
     """Extract NetEase playlist ID from URL, share text, or pure ID string."""
     text = text_or_url.strip()
 
-    # If already pure digits
     if text.isdigit():
         return text
 
-    # Extract HTTP/HTTPS URL from any surrounding share text
     url_match = re.search(r"https?://[^\s]+", text)
     url = url_match.group(0) if url_match else text
 
-    # Follow redirects if short link or mobile link without ID
     if any(domain in url for domain in ["163cn.tv", "163.lu", "y.music.163.com"]):
         try:
             resp = requests.head(url, headers=HEADERS, allow_redirects=True, timeout=8)
@@ -48,7 +46,6 @@ def extract_playlist_id(text_or_url: str) -> str | None:
         except Exception:
             pass
 
-    # Regex search for id=(\d+)
     m = re.search(r"playlist[/?].*?id=(\d+)", url)
     if m:
         return m.group(1)
@@ -62,7 +59,6 @@ def extract_playlist_id(text_or_url: str) -> str | None:
 
 def fetch_playlist_data(playlist_id: str) -> dict:
     """Fetch playlist metadata and track list from NetEase API."""
-    # API 1: traditional endpoint with full track list
     url1 = f"https://music.163.com/api/playlist/detail?id={playlist_id}"
     try:
         resp = requests.get(url1, headers=HEADERS, timeout=10)
@@ -77,7 +73,6 @@ def fetch_playlist_data(playlist_id: str) -> dict:
     except Exception as e:
         print(f"[WARN] API 1 failed: {e}")
 
-    # Fallback API 2: v1 endpoint
     url2 = f"https://music.163.com/api/v1/playlist/detail?id={playlist_id}"
     try:
         resp = requests.get(url2, headers=HEADERS, timeout=10)
@@ -125,15 +120,14 @@ def convert_tracks_to_songs(
     start_sec = parse_time_str(default_start)
 
     for t in selected:
-        title = t.get("name", "").strip()
-        artists_list = [a.get("name", "").strip() for a in t.get("artists", [])]
+        title = (t.get("name") or "").strip()
+        artists_list = [(a.get("name") or "").strip() for a in (t.get("artists") or []) if isinstance(a, dict)]
         artist = " / ".join(filter(None, artists_list)) or "未知艺人"
         album_obj = t.get("album") or {}
-        album = album_obj.get("name", "").strip()
-        cover_url = album_obj.get("picUrl", "").strip()
+        album = (album_obj.get("name") or "").strip()
+        cover_url = (album_obj.get("picUrl") or "").strip()
 
-        # If track duration is short, adjust start time
-        dur_ms = t.get("duration", 0)
+        dur_ms = t.get("duration") or 0
         dur_sec = dur_ms / 1000.0 if dur_ms > 0 else 240.0
 
         cur_start = start_sec
@@ -207,7 +201,6 @@ def search_netease_cover_url(
             if not songs:
                 continue
 
-            # Prefer track matching album or artist name if available
             best = songs[0]
             album_lower = album.lower().strip()
             artist_lower = clean_artist.lower()
@@ -317,7 +310,7 @@ def import_netease_playlist(
     default_start: str = "0:45",
     clip_duration: float = 45.0,
     append: bool = False,
-    output_path: str = PLAYLIST_FILE,
+    output_path: Path | str = PLAYLIST_FILE,
 ) -> tuple[int, str]:
     """
     Main function to fetch NetEase playlist and save to playlist.json.
@@ -341,7 +334,6 @@ def import_netease_playlist(
         clip_duration=clip_duration,
     )
 
-    # Load existing playlist.json or create default template
     if os.path.isfile(output_path):
         with open(output_path, "r", encoding="utf-8") as f:
             try:
@@ -351,16 +343,19 @@ def import_netease_playlist(
     else:
         config = {}
 
+    if not isinstance(config, dict):
+        config = {}
+
     config.setdefault("_comment", "音乐推荐视频歌单配置 — 由 download.py 下载素材后自动补全 file_path")
     config.setdefault("output_sequence_name", pl_name)
     config.setdefault("resolution", {"width": 1920, "height": 1080})
     config.setdefault("fps", 30)
 
     if append and "songs" in config and isinstance(config["songs"], list):
-        # Prevent duplicates based on (title, artist)
         existing_keys = {
-            (s.get("title", "").strip().lower(), s.get("artist", "").strip().lower())
+            ((s.get("title") or "").strip().lower(), (s.get("artist") or "").strip().lower())
             for s in config["songs"]
+            if isinstance(s, dict)
         }
         added = 0
         for song in new_songs:
@@ -376,8 +371,7 @@ def import_netease_playlist(
         config["songs"] = new_songs
         added = len(new_songs)
 
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(config, f, ensure_ascii=False, indent=2)
+    save_playlist_model(config, output_path)
 
     return added, pl_name
 

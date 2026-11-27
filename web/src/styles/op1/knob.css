@@ -1,0 +1,94 @@
+.hardware-knob {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  min-width: 0;
+  text-align: center;
+  --cap: var(--blue);
+}
+
+.hardware-knob[data-tone='green'] { --cap: var(--green); }
+.hardware-knob[data-tone='orange'] { --cap: var(--orange); }
+.hardware-knob[data-tone='ivory'] { --cap: #f7f5e8; }
+
+.knob-dial {
+  display: grid;
+  place-items: center;
+  width: 74px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 1px solid var(--case-edge);
+  background: radial-gradient(circle, var(--case-base) 0 59%, transparent 60%), repeating-conic-gradient(from -135deg, var(--hardware-ink) 0 1.4deg, var(--case-base) 1.4deg 15deg);
+  box-shadow: inset 0 1px 4px var(--shadow), 0 1px 1px var(--highlight);
+}
+
+.knob-grip {
+  position: relative;
+  width: 57px;
+  aspect-ratio: 1;
+  border: 1px solid #343746;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 36% 28%, #fff5, transparent 58%),
+    radial-gradient(circle, var(--cap) 0 65%, transparent 66%),
+    repeating-conic-gradient(from var(--angle), #15192248 0 5deg, transparent 5deg 12deg),
+    var(--cap);
+  box-shadow: inset 0 2px 2px #fffd, inset 0 -3px 3px #16203166, 1px 4px 0 #393d4b, 2px 7px 7px #1d20387a;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.knob-grip::after {
+  content: '';
+  position: absolute;
+  inset: 5px 25px 30px;
+  background: #262a35;
+  border-radius: var(--radius-control);
+  transform-origin: center 22px;
+  transform: rotate(var(--angle));
+}
+
+.knob-value {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 5px;
+  gap: 3px;
+  border: 1px solid var(--case-edge);
+  border-radius: var(--radius-control);
+  box-shadow: inset 0 1px 3px var(--shadow), 0 1px 0 var(--highlight);
+  color: inherit;
+  font: 11px var(--font-mono);
+}
+
+.knob-value input {
+  width: 45px;
+  height: 23px;
+  font: inherit;
+  text-align: right;
+  color: inherit;
+  background: transparent;
+  border: 0;
+}
+
+
+.hardware-knob-compact {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hardware-knob-compact .knob-dial { width: 32px; }
+.hardware-knob-compact .knob-grip { width: 23px; }
+.hardware-knob-compact .knob-grip::after {
+  inset: 2px 9px 12px;
+  transform-origin: center 8px;
+}
+
+.hardware-knob-compact .knob-value input {
+  width: 34px;
+  height: 18px;
+  appearance: textfield;
+}
+
+.hardware-knob-compact input::-webkit-inner-spin-button,
+.hardware-knob-compact input::-webkit-outer-spin-button { appearance: none; }

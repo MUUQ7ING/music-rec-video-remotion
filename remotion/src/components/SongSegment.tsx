@@ -31,6 +31,7 @@ interface SongSegmentProps {
   audioInFrames?: number;
   audioOutFrames?: number;
   mediaBaseUrl?: string;
+  meterMix?: boolean;
 }
 
 const SERIF_FONT =
@@ -44,6 +45,14 @@ function buildShadow(isBright: boolean, boost?: 'auto' | 'normal' | 'strong'): s
   return '0 2px 14px rgba(0, 0, 0, 0.85), 0 1px 3px rgba(0, 0, 0, 0.9)';
 }
 
+function buildBarTextShadow(isBright: boolean, boost?: 'auto' | 'normal' | 'strong'): string {
+  const strong = boost === 'strong' || (boost !== 'normal' && isBright);
+  if (strong) {
+    return '2px 3px 7px rgba(0, 0, 0, 0.75), 4px 6px 14px rgba(0, 0, 0, 0.36)';
+  }
+  return '2px 3px 6px rgba(0, 0, 0, 0.62), 4px 6px 12px rgba(0, 0, 0, 0.26)';
+}
+
 export const SongSegment: React.FC<SongSegmentProps> = ({
   song,
   index,
@@ -52,6 +61,7 @@ export const SongSegment: React.FC<SongSegmentProps> = ({
   audioInFrames = 24,
   audioOutFrames = 48,
   mediaBaseUrl,
+  meterMix,
 }) => {
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
@@ -242,17 +252,20 @@ export const SongSegment: React.FC<SongSegmentProps> = ({
       {/* V1: Base MV Video (wrapped in optional cover/beat/glitch visual effect) */}
       <VisualEffects
         effect={song.visual_effect}
+        modifiers={song.visual_modifiers}
         audioSrc={mediaAudioUrl}
         startSec={startSec}
         coverUrl={coverUrl}
         lyrics={lyrics}
         currentMediaSec={currentMediaSec}
+        isCoverMode={song.media_source === 'netease_cover' || Boolean(!videoUrl && audioUrl)}
       >
         {videoUrl ? (
           <OffthreadVideo
             src={videoUrl}
             startFrom={startFrom}
             volume={computeVolume}
+            useWebAudioApi={meterMix}
             style={{ width: '100%', height: '100%', objectFit: 'cover' }}
           />
         ) : coverUrl ? (
@@ -269,6 +282,7 @@ export const SongSegment: React.FC<SongSegmentProps> = ({
           src={audioUrl}
           startFrom={startFrom}
           volume={computeVolume}
+          useWebAudioApi={meterMix}
         />
       ) : null}
 
@@ -336,12 +350,12 @@ export const SongSegment: React.FC<SongSegmentProps> = ({
           borderRadius: 12,
           overflow: 'hidden',
           backgroundColor: isBottomBright
-            ? 'rgba(10, 12, 16, 0.58)'
-            : 'rgba(12, 14, 18, 0.36)',
-          backdropFilter: 'blur(26px) saturate(140%)',
-          WebkitBackdropFilter: 'blur(26px) saturate(140%)',
-          border: '1px solid rgba(255, 255, 255, 0.16)',
-          boxShadow: '0 10px 36px rgba(0, 0, 0, 0.45)',
+            ? 'rgba(18, 22, 30, 0.28)'
+            : 'rgba(20, 24, 34, 0.16)',
+          backdropFilter: 'blur(28px) saturate(155%)',
+          WebkitBackdropFilter: 'blur(28px) saturate(155%)',
+          border: '1px solid rgba(255, 255, 255, 0.22)',
+          boxShadow: '0 10px 32px rgba(0, 0, 0, 0.28)',
           opacity: uiOpacity,
           transform: `translateY(${barTranslateY}px)`,
         }}
@@ -380,7 +394,7 @@ export const SongSegment: React.FC<SongSegmentProps> = ({
             width: titleContainerW,
             display: 'flex',
             flexDirection: 'column',
-            gap: 8,
+            gap: 4,
           }}
         >
           <div
@@ -388,6 +402,7 @@ export const SongSegment: React.FC<SongSegmentProps> = ({
               width: titleContainerW,
               overflow: 'hidden',
               whiteSpace: 'nowrap',
+              paddingBottom: 6,
               maskImage:
                 isLongTitle && overflowPx > 0
                   ? 'linear-gradient(to right, black 0%, black 93%, transparent 100%)'
@@ -407,7 +422,7 @@ export const SongSegment: React.FC<SongSegmentProps> = ({
                 lineHeight: 1.2,
                 color: '#ffffff',
                 letterSpacing: '0.015em',
-                textShadow: buildShadow(isBottomBright, song.shadow_boost),
+                textShadow: buildBarTextShadow(isBottomBright, song.shadow_boost),
                 transform: `translateX(${marqueeOffset}px)`,
               }}
             >
@@ -424,10 +439,11 @@ export const SongSegment: React.FC<SongSegmentProps> = ({
                 lineHeight: 1.25,
                 color: 'rgba(235, 240, 250, 0.92)',
                 letterSpacing: '0.02em',
-                textShadow: buildShadow(isBottomBright, song.shadow_boost),
+                textShadow: buildBarTextShadow(isBottomBright, song.shadow_boost),
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
+                paddingBottom: 6,
               }}
             >
               {song.album}
@@ -442,23 +458,25 @@ export const SongSegment: React.FC<SongSegmentProps> = ({
               lineHeight: 1.25,
               color: 'rgba(219, 230, 242, 0.86)',
               letterSpacing: '0.025em',
-              textShadow: buildShadow(isBottomBright, song.shadow_boost),
+              textShadow: buildBarTextShadow(isBottomBright, song.shadow_boost),
               whiteSpace: 'nowrap',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
+              paddingBottom: 6,
             }}
           >
             {song.artist}
           </div>
         </div>
 
-        {/* Bottom-right Bilingual Lyrics (hidden when lyric_stage already displays full scrolling lyrics) */}
+        {/* Right-centered Bilingual Lyrics inside glass bar (hidden when lyric_stage already displays full scrolling lyrics) */}
         {activeLyric && song.visual_effect !== 'lyric_stage' ? (
           <div
             style={{
               position: 'absolute',
-              right: 26,
-              bottom: 24,
+              right: 28,
+              top: '50%',
+              transform: 'translateY(-50%)',
               maxWidth: 740,
               display: 'flex',
               flexDirection: 'column',
@@ -469,12 +487,12 @@ export const SongSegment: React.FC<SongSegmentProps> = ({
             <div
               style={{
                 fontFamily: SERIF_FONT,
-                fontSize: 30,
+                fontSize: 34,
                 fontWeight: 500,
                 lineHeight: 1.25,
                 color: '#ffffff',
                 textAlign: 'right',
-                textShadow: buildShadow(isBottomBright, song.shadow_boost),
+                textShadow: buildBarTextShadow(isBottomBright, song.shadow_boost),
               }}
             >
               {activeLyric.orig}
@@ -483,12 +501,12 @@ export const SongSegment: React.FC<SongSegmentProps> = ({
               <div
                 style={{
                   fontFamily: SERIF_FONT,
-                  fontSize: 24,
+                  fontSize: 27,
                   fontWeight: 400,
                   lineHeight: 1.25,
                   color: 'rgba(235, 240, 250, 0.88)',
                   textAlign: 'right',
-                  textShadow: buildShadow(isBottomBright, song.shadow_boost),
+                  textShadow: buildBarTextShadow(isBottomBright, song.shadow_boost),
                 }}
               >
                 {activeLyric.trans}

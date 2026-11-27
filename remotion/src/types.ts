@@ -80,7 +80,8 @@ export interface SongItem {
   reason_mode?: 'auto' | 'manual';
   reason_timings?: number[];
   transition_style?: string;
-  visual_effect?: 'auto' | 'none' | 'beat_pulse' | 'ken_burns' | 'glitch' | 'vinyl_spin' | string;
+  visual_effect?: string;
+  visual_modifiers?: string[];
   display_index?: number | null;
   lyrics_path?: string;
   lyrics_offset?: number;
@@ -99,6 +100,7 @@ export interface PlaylistConfig {
 }
 
 export type PlaylistVideoProps = {
+  meterMix?: boolean;
   playlist: PlaylistConfig;
   mediaBaseUrl?: string;
   [key: string]: unknown;

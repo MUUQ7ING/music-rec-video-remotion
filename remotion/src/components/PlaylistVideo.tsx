@@ -66,6 +66,7 @@ function resolveTiming(style: string, durationInFrames: number) {
 export const PlaylistVideo: React.FC<PlaylistVideoProps> = ({
   playlist,
   mediaBaseUrl,
+  meterMix,
 }) => {
   const { fps } = useVideoConfig();
   const intro = playlist.intro;
@@ -93,6 +94,7 @@ export const PlaylistVideo: React.FC<PlaylistVideoProps> = ({
                 audioInFrames={seg.audioInFrames}
                 audioOutFrames={seg.audioOutFrames}
                 mediaBaseUrl={mediaBaseUrl}
+                meterMix={meterMix}
               />
             </TransitionSeries.Sequence>
             {seg.transitionAfterFrames > 0 ? (

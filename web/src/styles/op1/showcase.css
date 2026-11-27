@@ -1,0 +1,294 @@
+.hardware-showcase {
+  --case-top: #ececf1;
+  --case-base: #babcc8;
+  --case-edge: #757989;
+  --panel-top: #d9dbe3;
+  --panel-base: #c5c7d1;
+  --key-top: #fffdfa;
+  --key-base: #e2e0e3;
+  --key-edge: #858694;
+  --hardware-ink: #232631;
+  --highlight: #fff9;
+  --shadow: #23263846;
+  --blue: #8fc6f5;
+  --green: #70d28a;
+  --orange: #fe813b;
+  --red: #f35271;
+  height: 100%;
+  overflow: auto;
+  background: #30323a;
+  color: var(--hardware-ink);
+  font-family: 'Archivo Variable', system-ui, sans-serif;
+  padding: clamp(16px, 5vw, 76px) clamp(10px, 4vw, 56px);
+}
+
+.hardware-showcase[data-finish='graphite'] {
+  --case-top: #50545e;
+  --case-base: #2e323b;
+  --case-edge: #151820;
+  --panel-top: #393d46;
+  --panel-base: #242831;
+  --key-top: #555965;
+  --key-base: #393d48;
+  --key-edge: #141820;
+  --hardware-ink: #f4f4f8;
+  --highlight: #fff4;
+  --shadow: #090b10a0;
+}
+
+.hardware-chassis {
+  margin: 0 auto;
+  max-width: 1180px;
+  padding: clamp(12px, 2.5vw, 35px);
+  border: 1px solid var(--case-edge);
+  border-radius: 14px;
+  background: linear-gradient(155deg, var(--case-top) 15%, var(--case-base));
+  box-shadow: inset 1px 2px 1px var(--highlight), inset -2px -2px 2px var(--case-edge), 0 8px 0 #696c79, 0 11px 0 #252731, 0 26px 42px #11131abd;
+}
+
+.hardware-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 3px 3px 22px;
+}
+
+.hardware-header h1 {
+  margin: 0;
+  font-size: clamp(40px, 6.3vw, 86px);
+  font-weight: 850;
+  line-height: .92;
+  letter-spacing: -.075em;
+  font-variant-numeric: tabular-nums;
+}
+
+.hardware-header h1 span { color: #bb4015; }
+[data-finish='graphite'] .hardware-header h1 span { color: var(--orange); }
+
+.hardware-header p { margin: 0 0 6px; }
+
+.hardware-header nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.hardware-header a { color: inherit; font-weight: 650; text-underline-offset: 4px; }
+
+.hardware-label {
+  font: 650 11px/1.35 var(--font-mono);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.hardware-face {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 9px;
+  padding: 8px;
+  border: 1px solid var(--case-edge);
+  border-radius: 9px;
+  background: var(--case-edge);
+  box-shadow: inset 1px 2px 4px #14162394, 0 1px 0 var(--highlight);
+}
+
+.hardware-panel {
+  min-width: 0;
+  border-radius: 5px;
+  padding: clamp(10px, 1.5vw, 21px);
+  background: linear-gradient(145deg, var(--panel-top), var(--panel-base));
+  box-shadow: inset 1px 1px 1px var(--highlight), inset -1px -2px 2px var(--shadow), 0 2px 2px var(--shadow);
+}
+
+.hardware-panel h2 {
+  margin: 0 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--shadow);
+  box-shadow: 0 1px 0 var(--highlight);
+}
+
+.oled-bezel {
+  padding: 7px;
+  background: linear-gradient(145deg, #4d4e56, #24262e);
+  border: 1px solid #161820;
+  border-radius: 8px;
+  box-shadow: 0 2px 0 var(--highlight), inset 1px 3px 6px #111219;
+}
+
+.oled-glass {
+  padding: clamp(10px, 2vw, 24px);
+  border: 1px solid #080a0e;
+  border-radius: 4px;
+  background: linear-gradient(156deg, #232d30, #0c1419 54%);
+  color: #a1ead1;
+  box-shadow: inset 2px 3px 9px #000b;
+}
+
+.oled-header, .oled-footer {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.oled-time {
+  margin: 12px 0 16px;
+  font: 600 clamp(34px, 5.1vw, 70px)/1 var(--font-mono);
+  letter-spacing: -.09em;
+  font-variant-numeric: tabular-nums;
+  color: #b6ffe4;
+  text-shadow: 0 0 14px #5af4ac4a;
+}
+
+.oled-time span {
+  font-size: 11px;
+  letter-spacing: .08em;
+  color: #8eb7aa;
+}
+
+.oled-meters { display: grid; gap: 4px; margin-bottom: 14px; }
+
+.oled-meter {
+  display: grid;
+  grid-template-columns: 1ch minmax(0, 1fr) 6ch;
+  align-items: center;
+  gap: 8px;
+  font: 11px var(--font-mono);
+}
+
+.oled-meter output { text-align: right; }
+.oled-meter-bars { display: grid; grid-template-columns: repeat(28, minmax(0, 1fr)); gap: 2px; }
+.oled-meter-bars i { height: 7px; border-radius: 1px; background: #283b39; }
+.oled-meter-bars [data-lit='true'] { background: #7de6ac; }
+.oled-meter-bars [data-band='high'][data-lit='true'] { background: #e8c66f; }
+.oled-meter-bars [data-band='peak'][data-lit='true'] { background: var(--red); }
+
+.knob-bank {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.knob-help { margin: 10px 0 0; text-align: center; font-size: 11px; }
+.hardware-keys, .hardware-switches { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; }
+.hardware-switches { margin-top: 16px; }
+
+.hardware-showcase .hardware-key {
+  --key-depth: var(--key-edge);
+  --key-face: linear-gradient(155deg, var(--key-top), var(--key-base));
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--key-depth);
+  border-radius: 5px;
+  background: var(--key-face);
+  color: var(--hardware-ink);
+  box-shadow: inset 1px 1px 0 var(--highlight), inset -1px -1px 1px var(--shadow), 0 3px 0 var(--key-depth), 0 5px 5px var(--shadow);
+  transition: transform 65ms ease-out, box-shadow 65ms ease-out;
+}
+
+.hardware-showcase .hardware-key.play-key {
+  --key-depth: #39734d;
+  --key-face: linear-gradient(#a5e8b4, var(--green));
+  color: #142a1b;
+}
+
+.hardware-showcase .hardware-key.edit-key {
+  --key-depth: #995432;
+  --key-face: linear-gradient(#ffd4ae, #ffab72);
+  color: #342018;
+}
+
+.hardware-showcase .hardware-key:hover:not(:disabled) {
+  background: var(--key-face);
+  filter: brightness(1.07);
+}
+.hardware-showcase .hardware-key:active:not(:disabled),
+.hardware-showcase .hardware-key.is-pressed:not(:disabled) {
+  transform: translateY(2px);
+  background: var(--key-face);
+  box-shadow: inset 0 2px 4px #20263d50, 0 1px 0 var(--key-depth);
+}
+
+.hardware-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  padding: 4px;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.switch-track {
+  display: flex;
+  align-items: center;
+  width: 38px;
+  height: 18px;
+  padding: 2px;
+  border: 1px solid #222630;
+  border-radius: 4px;
+  background: #434755;
+  box-shadow: inset 0 2px 4px #0008, 0 1px 0 var(--highlight);
+}
+
+.switch-track i {
+  width: 16px;
+  height: 12px;
+  border-radius: 2px;
+  background: repeating-linear-gradient(90deg, #e3e2e7 0 2px, #b6b9c6 2px 3px);
+  box-shadow: inset 0 1px 0 white, 0 2px 3px #0009;
+  transition: transform 100ms ease-out;
+}
+
+.hardware-switch[aria-checked='true'] .switch-track { background: #387354; }
+.hardware-switch[aria-checked='true'] .switch-track i { transform: translateX(16px); }
+.hardware-statuses { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 8px; }
+
+.hardware-led {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  font: 650 10px var(--font-mono);
+  text-transform: uppercase;
+  --led-color: #4a4d5a;
+}
+
+.hardware-led[data-tone='green'] { --led-color: var(--green); }
+.hardware-led[data-tone='amber'] { --led-color: #f5c453; }
+.hardware-led[data-tone='blue'] { --led-color: var(--blue); }
+.hardware-led[data-tone='orange'] { --led-color: var(--orange); }
+.hardware-led[data-tone='red'] { --led-color: var(--red); }
+
+.hardware-led i {
+  flex: 0 0 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1px solid #1e2230;
+  background: radial-gradient(circle at 35% 30%, #fff9, transparent 52%), var(--led-color);
+  box-shadow: 0 0 6px var(--led-color), 0 1px 0 var(--highlight);
+}
+
+.hardware-led[data-tone='off'] i { box-shadow: inset 0 2px 3px #0009; }
+.hardware-led[data-tone='blue'] i { animation: led-breathe 2s ease-in-out infinite; }
+.hardware-led[data-tone='orange'] i { animation: led-breathe 1.4s ease-in-out infinite; }
+
+@keyframes led-breathe { 50% { filter: brightness(.6); } }
+
+.hardware-showcase :focus-visible { outline: 2px solid #2683db; outline-offset: 3px; }
+
+@media (max-width: 670px) {
+  .hardware-face { grid-template-columns: minmax(0, 1fr); }
+  .hardware-header { align-items: flex-start; }
+  .hardware-header nav { justify-content: flex-end; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hardware-showcase *, .hardware-showcase *::before, .hardware-showcase *::after {
+    animation: none;
+    transition: none;
+  }
+}

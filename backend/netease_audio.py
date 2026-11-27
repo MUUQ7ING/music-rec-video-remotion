@@ -276,6 +276,44 @@ def _guess_audio_ext(url: str, content_type: str, quality: str) -> str:
     return ".mp3"
 
 
+def _ensure_remotion_compatible_audio(audio_path: Path, log: Callable[[str], None]) -> Path:
+    if audio_path.suffix.lower() != ".flac":
+        return audio_path
+    m4a_path = audio_path.with_suffix(".m4a")
+    ffmpeg = find_ffmpeg()
+    tmp_m4a = m4a_path.with_suffix(".tmp.m4a")
+    cmd = [
+        ffmpeg,
+        "-y",
+        "-i",
+        str(audio_path),
+        "-vn",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "320k",
+        "-movflags",
+        "+faststart",
+        str(tmp_m4a),
+    ]
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    if res.returncode != 0 or not tmp_m4a.is_file() or tmp_m4a.stat().st_size < 4096:
+        if tmp_m4a.is_file():
+            try:
+                tmp_m4a.unlink()
+            except OSError:
+                pass
+        log(f"[网易云音频] FLAC 转码 M4A 失败，保留原文件: {res.stderr[-200:] if res.stderr else ''}")
+        return audio_path
+    os.replace(tmp_m4a, m4a_path)
+    try:
+        audio_path.unlink()
+    except OSError:
+        pass
+    log(f"[网易云音频] 已将 FLAC 转码为 Remotion 兼容格式: {m4a_path.name}")
+    return m4a_path
+
+
 def download_netease_audio_file(
     song_id: int | str,
     out_dir: Path = AUDIO_DIR,
@@ -295,11 +333,11 @@ def download_netease_audio_file(
 
     # Check if an existing audio file with matching stem already exists
     if not force:
-        for ext in (".flac", ".mp3", ".m4a", ".wav"):
+        for ext in (".m4a", ".mp3", ".wav", ".flac"):
             existing = out_dir / f"{stem}{ext}"
             if existing.is_file() and existing.stat().st_size > 10_000:
                 log(f"[网易云音频] 已存在本地文件: {existing.name}")
-                return existing, quality
+                return _ensure_remotion_compatible_audio(existing, log), quality
 
     audio_url, actual_quality = fetch_netease_audio_url(
         song_id=song_id,
@@ -354,6 +392,7 @@ def download_netease_audio_file(
 
     size_mb = total_bytes / (1024 * 1024)
     log(f"[网易云音频] 下载完成: {out_path.name} ({size_mb:.2f} MB, {actual_quality})")
+    out_path = _ensure_remotion_compatible_audio(out_path, log)
     return out_path, actual_quality
 
 

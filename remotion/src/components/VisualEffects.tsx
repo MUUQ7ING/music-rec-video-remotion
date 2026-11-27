@@ -15,6 +15,7 @@ import {
   visualizeAudioWaveform,
 } from '@remotion/media-utils';
 import type { LyricsFile } from '../types';
+import { AudioCoverStage, canDecodeAudioUrl } from './AudioCoverStage';
 import {
   FlowLyricsStage,
   buildWordsFromLine,
@@ -38,11 +39,13 @@ export type VisualEffectType =
 
 interface VisualEffectsProps {
   effect?: string;
+  modifiers?: string[];
   audioSrc: string;
   startSec: number;
   coverUrl?: string;
   lyrics?: LyricsFile | null;
   currentMediaSec?: number;
+  isCoverMode?: boolean;
   children: React.ReactNode;
 }
 
@@ -53,7 +56,35 @@ type AudioDrivenMode =
   | 'cyber_hud'
   | 'waveform_aura';
 
-const AudioDrivenEffect: React.FC<{
+const FullCoverBlurredBackdrop: React.FC<{
+  coverUrl?: string;
+  filter: string;
+  transform: string;
+  children: React.ReactNode;
+}> = ({ coverUrl, filter, transform, children }) => (
+  <>
+    <AbsoluteFill style={{ opacity: 0, pointerEvents: 'none' }}>
+      {children}
+    </AbsoluteFill>
+    {coverUrl ? (
+      <AbsoluteFill
+        style={{
+          filter,
+          transform,
+          transformOrigin: 'center center',
+          willChange: 'transform, filter',
+        }}
+      >
+        <Img
+          src={coverUrl}
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+        />
+      </AbsoluteFill>
+    ) : null}
+  </>
+);
+
+const AudioDrivenEffectInner: React.FC<{
   mode: AudioDrivenMode;
   audioSrc: string;
   startSec: number;
@@ -350,14 +381,13 @@ const AudioDrivenEffect: React.FC<{
     const coverScale = 1 + bassEnergy * 0.045;
     return (
       <AbsoluteFill style={{ backgroundColor: '#09090b', overflow: 'hidden' }}>
-        <AbsoluteFill
-          style={{
-            filter: 'blur(42px) brightness(0.4) saturate(1.35)',
-            transform: `scale(${1.12 + midEnergy * 0.05})`,
-          }}
+        <FullCoverBlurredBackdrop
+          coverUrl={coverUrl}
+          filter="blur(56px) brightness(0.38) saturate(1.4)"
+          transform={`scale(${1.14 + midEnergy * 0.05})`}
         >
           {children}
-        </AbsoluteFill>
+        </FullCoverBlurredBackdrop>
 
         {/* Full-width glowing oscilloscope waveform behind cover */}
         {waveformPath ? (
@@ -365,7 +395,7 @@ const AudioDrivenEffect: React.FC<{
             style={{
               justifyContent: 'center',
               alignItems: 'center',
-              paddingBottom: 130,
+              paddingBottom: 64,
               pointerEvents: 'none',
             }}
           >
@@ -389,19 +419,19 @@ const AudioDrivenEffect: React.FC<{
           </AbsoluteFill>
         ) : null}
 
-        {/* Floating 1:1 Cover Card */}
+        {/* Floating 1:1 Cover Card (605x605, centered at y=508) */}
         <AbsoluteFill
           style={{
             justifyContent: 'center',
             alignItems: 'center',
-            paddingBottom: 130,
+            paddingBottom: 64,
           }}
         >
           {coverUrl ? (
             <div
               style={{
-                width: 420,
-                height: 420,
+                width: 605,
+                height: 605,
                 borderRadius: 24,
                 overflow: 'hidden',
                 transform: `scale(${coverScale})`,
@@ -554,30 +584,112 @@ const AudioDrivenEffect: React.FC<{
   );
 };
 
+const AudioDrivenEffect: React.FC<{
+  mode: AudioDrivenMode;
+  audioSrc: string;
+  startSec: number;
+  coverUrl?: string;
+  children: React.ReactNode;
+}> = (props) => {
+  if (!canDecodeAudioUrl(props.audioSrc)) {
+    return <AbsoluteFill>{props.children}</AbsoluteFill>;
+  }
+  return <AudioDrivenEffectInner {...props} />;
+};
+
+const RetroCrtOverlay: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const frame = useCurrentFrame();
+  const flicker = 0.96 + random(`crt-${Math.floor(frame / 2)}`) * 0.05;
+  return (
+    <AbsoluteFill style={{ overflow: 'hidden', backgroundColor: '#000' }}>
+      <AbsoluteFill
+        style={{
+          filter: `sepia(0.18) contrast(1.08) saturate(1.15) brightness(${flicker.toFixed(3)})`,
+          transform: 'scale(1.02)',
+        }}
+      >
+        {children}
+      </AbsoluteFill>
+      <AbsoluteFill
+        style={{
+          background:
+            'repeating-linear-gradient(0deg, rgba(0,0,0,0.22) 0px, rgba(0,0,0,0.22) 1px, transparent 1px, transparent 4px)',
+          pointerEvents: 'none',
+        }}
+      />
+      <AbsoluteFill
+        style={{
+          background:
+            'radial-gradient(circle at center, transparent 52%, rgba(0, 0, 0, 0.65) 100%)',
+          pointerEvents: 'none',
+        }}
+      />
+    </AbsoluteFill>
+  );
+};
+
 export const VisualEffects: React.FC<VisualEffectsProps> = ({
   effect = 'auto',
+  modifiers = [],
   audioSrc,
   startSec,
   coverUrl,
   lyrics,
   currentMediaSec = 0,
+  isCoverMode = false,
   children,
 }) => {
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
 
-  const resolvedEffect: VisualEffectType =
-    effect && effect !== 'auto' ? (effect as VisualEffectType) : 'none';
+  const activeModifiers = new Set(modifiers);
+  const legacyModifierEffects = new Set(['beat_pulse', 'float_3d', 'glitch', 'retro_crt']);
+
+  let resolvedEffect: VisualEffectType = 'none';
+  if (!effect || effect === 'auto') {
+    resolvedEffect = 'none';
+    if (isCoverMode && activeModifiers.size === 0) {
+      activeModifiers.add('beat_pulse');
+    }
+  } else if (legacyModifierEffects.has(effect)) {
+    resolvedEffect = 'none';
+    activeModifiers.add(effect);
+  } else {
+    resolvedEffect = effect as VisualEffectType;
+  }
+
+  const hasBeatPulse = activeModifiers.has('beat_pulse');
+  const hasFloat3d = activeModifiers.has('float_3d');
+  const hasGlitch = activeModifiers.has('glitch');
+  const hasRetroCrt = activeModifiers.has('retro_crt');
+
+  const wrapScreenModifiers = (node: React.ReactNode): React.ReactNode => {
+    let wrapped = node;
+    if (hasGlitch && audioSrc) {
+      wrapped = (
+        <AudioDrivenEffect
+          mode="glitch"
+          audioSrc={audioSrc}
+          startSec={startSec}
+          coverUrl={coverUrl}
+        >
+          {wrapped}
+        </AudioDrivenEffect>
+      );
+    }
+    if (hasRetroCrt) {
+      wrapped = <RetroCrtOverlay>{wrapped}</RetroCrtOverlay>;
+    }
+    return wrapped;
+  };
 
   if (
-    (resolvedEffect === 'beat_pulse' ||
-      resolvedEffect === 'glitch' ||
-      resolvedEffect === 'vinyl_spin' ||
+    (resolvedEffect === 'vinyl_spin' ||
       resolvedEffect === 'cyber_hud' ||
       resolvedEffect === 'waveform_aura') &&
     audioSrc
   ) {
-    return (
+    return wrapScreenModifiers(
       <AudioDrivenEffect
         mode={resolvedEffect}
         audioSrc={audioSrc}
@@ -585,7 +697,7 @@ export const VisualEffects: React.FC<VisualEffectsProps> = ({
         coverUrl={coverUrl}
       >
         {children}
-      </AudioDrivenEffect>
+      </AudioDrivenEffect>,
     );
   }
 
@@ -597,7 +709,7 @@ export const VisualEffects: React.FC<VisualEffectsProps> = ({
     });
     // Pure centered cinema dolly-in (avoids 2D subpixel pan stepping on <video>)
     const scale = interpolate(progress, [0, 1], [1.0, 1.12]);
-    return (
+    return wrapScreenModifiers(
       <AbsoluteFill style={{ overflow: 'hidden', backgroundColor: '#000' }}>
         <AbsoluteFill
           style={{
@@ -616,83 +728,7 @@ export const VisualEffects: React.FC<VisualEffectsProps> = ({
             pointerEvents: 'none',
           }}
         />
-      </AbsoluteFill>
-    );
-  }
-
-  if (resolvedEffect === 'float_3d') {
-    const t = frame / fps;
-    const rotY = Math.sin(t * 0.7) * 9;
-    const rotX = Math.cos(t * 0.55) * 6;
-    const floatY = Math.sin(t * 1.1) * 10;
-    return (
-      <AbsoluteFill style={{ backgroundColor: '#09090b', overflow: 'hidden' }}>
-        <AbsoluteFill
-          style={{
-            filter: 'blur(40px) brightness(0.38) saturate(1.25)',
-            transform: 'scale(1.14)',
-          }}
-        >
-          {children}
-        </AbsoluteFill>
-        <AbsoluteFill
-          style={{
-            justifyContent: 'center',
-            alignItems: 'center',
-            paddingBottom: 130,
-            perspective: 1200,
-          }}
-        >
-          {coverUrl ? (
-            <div
-              style={{
-                width: 440,
-                height: 440,
-                borderRadius: 24,
-                overflow: 'hidden',
-                transform: `translate3d(0, ${floatY.toFixed(2)}px, 0) rotateX(${rotX.toFixed(2)}deg) rotateY(${rotY.toFixed(2)}deg)`,
-                boxShadow: '0 32px 85px rgba(0, 0, 0, 0.85)',
-                border: '1px solid rgba(255, 255, 255, 0.25)',
-                willChange: 'transform',
-              }}
-            >
-              <Img src={coverUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            </div>
-          ) : null}
-        </AbsoluteFill>
-      </AbsoluteFill>
-    );
-  }
-
-  if (resolvedEffect === 'retro_crt') {
-    const flicker = 0.96 + random(`crt-${Math.floor(frame / 2)}`) * 0.05;
-    return (
-      <AbsoluteFill style={{ overflow: 'hidden', backgroundColor: '#000' }}>
-        <AbsoluteFill
-          style={{
-            filter: `sepia(0.18) contrast(1.08) saturate(1.15) brightness(${flicker.toFixed(3)})`,
-            transform: 'scale(1.02)',
-          }}
-        >
-          {children}
-        </AbsoluteFill>
-        {/* CRT Scanlines */}
-        <AbsoluteFill
-          style={{
-            background:
-              'repeating-linear-gradient(0deg, rgba(0,0,0,0.22) 0px, rgba(0,0,0,0.22) 1px, transparent 1px, transparent 4px)',
-            pointerEvents: 'none',
-          }}
-        />
-        {/* Warm Vignette */}
-        <AbsoluteFill
-          style={{
-            background:
-              'radial-gradient(circle at center, transparent 52%, rgba(0, 0, 0, 0.65) 100%)',
-            pointerEvents: 'none',
-          }}
-        />
-      </AbsoluteFill>
+      </AbsoluteFill>,
     );
   }
 
@@ -721,7 +757,7 @@ export const VisualEffects: React.FC<VisualEffectsProps> = ({
     const gentleRotY = 16 + Math.sin(t * 0.6) * 3;
     const gentleFloatY = Math.sin(t * 0.9) * 6;
 
-    return (
+    return wrapScreenModifiers(
       <AbsoluteFill style={{ backgroundColor: '#09090b', overflow: 'hidden' }}>
         <AbsoluteFill
           style={{
@@ -916,58 +952,32 @@ export const VisualEffects: React.FC<VisualEffectsProps> = ({
             </div>
           )}
         </div>
-      </AbsoluteFill>
+      </AbsoluteFill>,
     );
   }
 
   if (resolvedEffect === 'flow_lyrics') {
-    const t = frame / fps;
-    const breatheScale = 1 + Math.sin(t * 0.55) * 0.025;
-
-    return (
-      <AbsoluteFill style={{ backgroundColor: '#09090b', overflow: 'hidden' }}>
-        {/* Deep Ambient Backdrop */}
-        <AbsoluteFill
-          style={{
-            filter: 'blur(54px) brightness(0.24) saturate(1.35)',
-            transform: 'scale(1.18)',
-          }}
+    return wrapScreenModifiers(
+      <AbsoluteFill style={{ backgroundColor: '#07070a', overflow: 'hidden' }}>
+        <AudioCoverStage
+          audioSrc={audioSrc}
+          startSec={startSec}
+          coverUrl={coverUrl}
+          coverBrightness={0.52}
+          animateBeat={hasBeatPulse}
+          float3d={hasFloat3d}
+          showParticles={true}
         >
           {children}
-        </AbsoluteFill>
+        </AudioCoverStage>
 
-        {/* Center: Crisp Album Cover */}
-        {coverUrl ? (
-          <div
-            style={{
-              position: 'absolute',
-              left: '50%',
-              top: 445,
-              width: 540,
-              height: 540,
-              borderRadius: 24,
-              overflow: 'hidden',
-              transform: `translate3d(-50%, -50%, 0) scale(${breatheScale.toFixed(4)})`,
-              filter: 'brightness(0.48) saturate(1.08)',
-              boxShadow:
-                '0 28px 80px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.16)',
-              pointerEvents: 'none',
-            }}
-          >
-            <Img
-              src={coverUrl}
-              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-            />
-          </div>
-        ) : null}
-
-        {/* Foreground Center: 流光（Flow）Word-by-Word Kinetic Lyric Stage */}
+        {/* Foreground Center: 流光（Flow）Word-by-Word Kinetic Lyric Stage (centered on 605x605 cover) */}
         <div
           style={{
             position: 'absolute',
             left: 160,
             right: 160,
-            top: 140,
+            top: 193,
             height: 630,
           }}
         >
@@ -976,9 +986,54 @@ export const VisualEffects: React.FC<VisualEffectsProps> = ({
             currentMediaSec={currentMediaSec}
           />
         </div>
-      </AbsoluteFill>
+      </AbsoluteFill>,
     );
   }
 
-  return <AbsoluteFill>{children}</AbsoluteFill>;
+  if (isCoverMode && (hasBeatPulse || hasFloat3d)) {
+    return wrapScreenModifiers(
+      <AudioCoverStage
+        audioSrc={audioSrc}
+        startSec={startSec}
+        coverUrl={coverUrl}
+        coverBrightness={1}
+        animateBeat={hasBeatPulse}
+        float3d={hasFloat3d}
+        showParticles={false}
+      >
+        {children}
+      </AudioCoverStage>,
+    );
+  }
+
+  if (hasBeatPulse && audioSrc) {
+    return wrapScreenModifiers(
+      <AudioDrivenEffect
+        mode="beat_pulse"
+        audioSrc={audioSrc}
+        startSec={startSec}
+        coverUrl={coverUrl}
+      >
+        {children}
+      </AudioDrivenEffect>,
+    );
+  }
+
+  if (hasFloat3d) {
+    return wrapScreenModifiers(
+      <AudioCoverStage
+        audioSrc={audioSrc}
+        startSec={startSec}
+        coverUrl={coverUrl}
+        coverBrightness={1}
+        animateBeat={false}
+        float3d={true}
+        showParticles={false}
+      >
+        {children}
+      </AudioCoverStage>,
+    );
+  }
+
+  return wrapScreenModifiers(<AbsoluteFill>{children}</AbsoluteFill>);
 };

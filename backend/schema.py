@@ -98,6 +98,7 @@ class SongItem(BaseModel):
     reason_timings: list[float] = Field(default_factory=list)
     transition_style: str = "inherit"
     visual_effect: str = "auto"
+    visual_modifiers: list[str] = Field(default_factory=list)
     display_index: Optional[int] = None
     # Lyrics settings
     lyrics_path: str = ""
