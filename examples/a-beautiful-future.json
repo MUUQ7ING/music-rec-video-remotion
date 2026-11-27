@@ -36,7 +36,8 @@
       "lyrics_enabled": true,
       "lyrics_offset": 0.8,
       "shadow_boost": "auto",
-      "youtube_url": "https://www.youtube.com/watch?v=qQWAicHiVhk"
+      "youtube_url": "https://www.youtube.com/watch?v=qQWAicHiVhk",
+      "cover_url": "https://p2.music.126.net/T7qkRJsFDat6GxWDXP2cTA==/109951164486305073.jpg"
     },
     {
       "title": "Look at the Sky",
@@ -55,7 +56,8 @@
       "visual_modifiers": [],
       "lyrics_enabled": true,
       "lyrics_offset": 0.0,
-      "shadow_boost": "auto"
+      "shadow_boost": "auto",
+      "cover_url": "https://p1.music.126.net/2qW-OYZod7SgrzxTwtyBqA==/109951165911363831.jpg"
     },
     {
       "title": "ホーリーダンス",
@@ -75,7 +77,8 @@
       "lyrics_enabled": true,
       "lyrics_offset": 9.4,
       "shadow_boost": "auto",
-      "youtube_url": "https://www.youtube.com/watch?v=CWe7oDJgtrQ"
+      "youtube_url": "https://www.youtube.com/watch?v=CWe7oDJgtrQ",
+      "cover_url": "https://p2.music.126.net/GDc5hluJ8I-qPdGNd7oyew==/109951163212870144.jpg"
     },
     {
       "title": "river relief",
@@ -95,7 +98,8 @@
       "lyrics_enabled": true,
       "lyrics_offset": 0.0,
       "shadow_boost": "auto",
-      "youtube_url": "https://www.youtube.com/watch?v=SNAGLIdQWXQ"
+      "youtube_url": "https://www.youtube.com/watch?v=SNAGLIdQWXQ",
+      "cover_url": "https://p2.music.126.net/C2l9_nEuP7l8JnfhGzYhGA==/109951168311736362.jpg"
     },
     {
       "title": "拝啓、夏に溺れる",
@@ -117,7 +121,8 @@
       "lyrics_enabled": true,
       "lyrics_offset": 0.0,
       "shadow_boost": "auto",
-      "youtube_url": "https://www.youtube.com/watch?v=9h1VOGzv2V4"
+      "youtube_url": "https://www.youtube.com/watch?v=9h1VOGzv2V4",
+      "cover_url": "https://p2.music.126.net/HmBB9fECQ8DCCnrxYzYwWA==/109951172804116153.jpg"
     },
     {
       "title": "ばらの花 × ネイティブダンサー",
@@ -137,7 +142,8 @@
       "lyrics_enabled": true,
       "lyrics_offset": 6.8,
       "shadow_boost": "auto",
-      "youtube_url": "https://www.youtube.com/watch?v=fvCQott3654"
+      "youtube_url": "https://www.youtube.com/watch?v=fvCQott3654",
+      "cover_url": "https://p2.music.126.net/iXqwn1VuR6kXZQ7PXPpO8w==/109951164563882084.jpg"
     },
     {
       "title": "Lifted Up (1985)",
@@ -157,7 +163,8 @@
       "lyrics_enabled": true,
       "lyrics_offset": 0.0,
       "shadow_boost": "auto",
-      "youtube_url": "https://www.youtube.com/watch?v=YeINWQDg7zg"
+      "youtube_url": "https://www.youtube.com/watch?v=YeINWQDg7zg",
+      "cover_url": "https://p2.music.126.net/ke9OalBqLFejhWWVMnj3Qw==/109951165971933801.jpg"
     },
     {
       "title": "Overthrower",
@@ -179,7 +186,8 @@
       "lyrics_enabled": true,
       "lyrics_offset": 0.0,
       "shadow_boost": "auto",
-      "youtube_url": "https://www.youtube.com/watch?v=R2UoOFymaRg"
+      "youtube_url": "https://www.youtube.com/watch?v=R2UoOFymaRg",
+      "cover_url": "https://p2.music.126.net/RC9En8a-npJZv2xZWHUpFg==/109951172131771925.jpg"
     }
   ]
 }
