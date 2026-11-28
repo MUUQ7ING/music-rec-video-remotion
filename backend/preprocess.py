@@ -191,6 +191,13 @@ def normalize_loudness(
     return out_video
 
 
+def normalized_video_name(song: SongItem) -> str:
+    stem = slug(song.title, song.artist)
+    if Path(song.file_path).name == f"{stem}_cover.mp4":
+        stem += "_cover"
+    return f"{stem}_norm.mp4"
+
+
 def preprocess_song(
     song: SongItem,
     project_root: Path,
@@ -204,7 +211,7 @@ def preprocess_song(
     log = log_fn or (lambda _msg: None)
     base_slug = slug(song.title, song.artist)
     cover_out = project_root / "covers" / f"{base_slug}.png"
-    norm_out = project_root / "processed" / f"{base_slug}_norm.mp4"
+    norm_out = project_root / "processed" / normalized_video_name(song)
 
     cover_ok = False
     if force or not song.cover_path or not (project_root / song.cover_path).is_file():

@@ -75,6 +75,8 @@ export interface SongClip {
   reason_mode: ReasonMode;
   reason_timings: number[];
   [key: string]: unknown;
+  visual_effect?: string;
+  visual_modifiers?: string[];
 }
 
 export interface DetectedBright {

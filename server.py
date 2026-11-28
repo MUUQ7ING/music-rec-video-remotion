@@ -6,11 +6,13 @@ import shutil
 import signal
 import socket
 import subprocess
+import tempfile
 import threading
 import time
+import uuid
 from pathlib import Path
 from typing import Callable, Optional
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -20,6 +22,7 @@ import yt_dlp
 
 from backend.download import (
     download_mv,
+    YOUTUBE_COOKIES_FILENAME,
     is_bilibili_url,
     slug,
     RAW_DIR,
@@ -40,7 +43,7 @@ from backend.bilibili import (
     get_bilibili_login_status,
     clear_bilibili_cookies,
 )
-from backend.preprocess import preprocess_song
+from backend.preprocess import normalized_video_name, preprocess_song
 from backend.waveform import get_waveform
 from backend.lyrics import fetch_and_save_lyrics
 from backend.analyze_visuals import analyze_song_visuals
@@ -106,6 +109,7 @@ app.mount("/covers", StaticFiles(directory=COVERS_DIR), name="covers")
 app.mount("/static", NoCacheStaticFiles(directory=WEB_DIR), name="static")
 
 task_lock = threading.Lock()
+project_lock = threading.RLock()
 tasks_state = {
     "is_downloading": False,
     "is_rendering": False,
@@ -208,10 +212,11 @@ def load_playlist() -> dict:
 
 def save_playlist(data: dict):
     model = PlaylistConfig.model_validate(data)
+    raw_dir = os.path.join(BASE_DIR, "raw")
     for song in model.songs:
         fp = song.file_path
         if fp:
-            resolved = resolve_file_path(fp, base_dir=BASE_DIR, raw_dir=RAW_DIR)
+            resolved = resolve_file_path(fp, base_dir=BASE_DIR, raw_dir=raw_dir)
             if os.path.isabs(resolved) and os.path.isfile(resolved):
                 song.file_path = to_relative_path(resolved, base_dir=BASE_DIR)
             elif os.path.isabs(fp):
@@ -220,7 +225,7 @@ def save_playlist(data: dict):
 
 
 def _resolve_path(rel_or_abs: str) -> str:
-    return resolve_file_path(rel_or_abs, base_dir=BASE_DIR, raw_dir=RAW_DIR)
+    return resolve_file_path(rel_or_abs, base_dir=BASE_DIR, raw_dir=os.path.join(BASE_DIR, "raw"))
 
 
 def _file_exists(rel_or_abs: str) -> bool:
@@ -263,7 +268,7 @@ def stream_song_media(index: int):
     path = _preview_media_path(index)
     if not path:
         raise HTTPException(status_code=404, detail="Local media file not found")
-    return FileResponse(path, media_type="video/mp4")
+    return FileResponse(path, media_type="video/mp4", headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/waveform/{index}")
@@ -289,9 +294,37 @@ async def upload_local_song_media(index: int, file: UploadFile = File(...)):
     safe_name = f"{slug(song.title, song.artist)}_local{orig_ext}"
     dest = raw_dir / safe_name
 
-    with open(dest, "wb") as f:
-        while chunk := await file.read(1024 * 1024):
-            f.write(chunk)
+    fd, tmp_path = tempfile.mkstemp(prefix=f".{safe_name}.", suffix=".tmp", dir=str(raw_dir))
+    try:
+        with os.fdopen(fd, "wb") as f:
+            while chunk := await file.read(1024 * 1024):
+                f.write(chunk)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, dest)
+    except Exception:
+        if os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+        raise
+
+    stale_norm = BASE_PATH / "processed" / normalized_video_name(song)
+    if stale_norm.is_file():
+        try:
+            stale_norm.unlink()
+        except OSError:
+            pass
+    if song.normalized_path:
+        prev_norm = Path(_resolve_path(song.normalized_path))
+        processed_dir = (BASE_PATH / "processed").resolve()
+        if prev_norm.is_file() and prev_norm != stale_norm:
+            try:
+                if os.path.commonpath([str(prev_norm.resolve()), str(processed_dir)]) == str(processed_dir):
+                    prev_norm.unlink()
+            except (OSError, ValueError):
+                pass
 
     song.file_path = f"raw/{safe_name}"
     song.normalized_path = ""
@@ -347,22 +380,49 @@ def fetch_single_lyrics(index: int):
     if index < 0 or index >= len(playlist.songs):
         raise HTTPException(status_code=404, detail="Song index out of range")
     song = playlist.songs[index]
+    song_key = _make_song_key(song)
     out = fetch_and_save_lyrics(song, BASE_PATH, force=True, log=log_task)
     if out and out.is_file():
-        save_playlist_model(playlist, PLAYLIST_FILE)
+        latest = load_playlist_model(PLAYLIST_FILE)
+        save_idx = _resolve_song_index(latest.songs, index, song_key)
+        if save_idx is not None:
+            latest_song = latest.songs[save_idx]
+            if song.netease_id and not latest_song.netease_id:
+                latest_song.netease_id = song.netease_id
+            if song.lyrics_path:
+                latest_song.lyrics_path = song.lyrics_path
+            save_playlist_model(latest, PLAYLIST_FILE)
         return json.loads(out.read_text(encoding="utf-8"))
     return {"lines": [], "has_translation": False}
 
 
 def _worker_analyze_visuals():
     try:
-        playlist = load_playlist_model(PLAYLIST_FILE)
-        total = max(1, len(playlist.songs))
-        for i, song in enumerate(playlist.songs):
+        initial_pl = load_playlist_model(PLAYLIST_FILE)
+        song_keys = [(i, _make_song_key(s)) for i, s in enumerate(initial_pl.songs)]
+        total = max(1, len(song_keys))
+        for i, song_key in song_keys:
+            current_pl = load_playlist_model(PLAYLIST_FILE)
+            target_idx = _resolve_song_index(current_pl.songs, i, song_key)
+            if target_idx is None:
+                continue
+            song = current_pl.songs[target_idx]
             _set_task_progress(f"分析 {song.title}", int((i / total) * 100))
+            orig_bright = dict(song.detected_bright)
             fetch_and_save_lyrics(song, BASE_PATH, force=False, log=log_task)
-            analyze_song_visuals(song, BASE_PATH, log=log_task)
-        save_playlist_model(playlist, PLAYLIST_FILE)
+            summary = analyze_song_visuals(song, BASE_PATH, log=log_task)
+            latest_pl = load_playlist_model(PLAYLIST_FILE)
+            save_idx = _resolve_song_index(latest_pl.songs, target_idx, song_key)
+            if save_idx is None:
+                continue
+            latest_song = latest_pl.songs[save_idx]
+            if song.netease_id and not latest_song.netease_id:
+                latest_song.netease_id = song.netease_id
+            if song.lyrics_path:
+                latest_song.lyrics_path = song.lyrics_path
+            if summary or song.detected_bright != orig_bright:
+                latest_song.detected_bright = song.detected_bright
+            save_playlist_model(latest_pl, PLAYLIST_FILE)
         _set_task_progress(progress_percent=100)
         log_task("视觉亮度与双语歌词分析完成")
     except Exception as e:
@@ -399,7 +459,10 @@ class PlaylistUpdateRequest(BaseModel):
 @app.post("/api/playlist")
 def update_playlist_api(req: PlaylistUpdateRequest):
     try:
-        save_playlist(req.data)
+        with project_lock:
+            if req.data.get("project_id", "default") != load_playlist().get("project_id", "default"):
+                return _error_response(409, "当前影片项目已切换，请刷新")
+            save_playlist(req.data)
     except ValidationError as e:
         errs = e.errors()
         msg = f"歌单数据校验失败: {errs[0].get('msg', str(e))}" if errs else f"歌单数据校验失败: {e}"
@@ -411,6 +474,113 @@ def update_playlist_api(req: PlaylistUpdateRequest):
     return {"status": "ok", "message": "歌单已保存"}
 
 
+def _project_directory() -> Path:
+    return Path(PLAYLIST_FILE).parent / "playlist_projects"
+
+
+def _project_path(project_id: str) -> Path:
+    return _project_directory() / project_id / "playlist.json"
+
+
+def _activate_project(config: dict) -> None:
+    with task_lock:
+        if tasks_state["is_downloading"] or tasks_state["is_rendering"] or tasks_state["queue_count"]:
+            raise HTTPException(status_code=409, detail="请等待当前任务结束再切换项目")
+        current = load_playlist()
+        current_id = current.get("project_id", "default")
+        if not re.fullmatch(r"default|[a-f0-9]{32}", current_id):
+            raise HTTPException(status_code=400, detail="无效的项目 ID")
+        save_playlist_model(current, _project_path(current_id))
+        save_playlist_model(config, PLAYLIST_FILE)
+
+
+@app.get("/api/projects")
+def list_projects():
+    with project_lock:
+        current = load_playlist()
+        current_id = current.get("project_id", "default")
+        projects = [{"id": current_id, "name": current["output_sequence_name"]}]
+        directory = _project_directory()
+        candidates = {path.stem: path for path in directory.glob("*.json")}
+        candidates.update({path.parent.name: path for path in directory.glob("*/playlist.json")})
+        for project_id, path in sorted(candidates.items()):
+            if project_id != current_id and re.fullmatch(r"default|[a-f0-9]{32}", project_id):
+                config = load_playlist_model(path)
+                projects.append({"id": project_id, "name": config.output_sequence_name})
+        return {"active": current_id, "projects": projects}
+
+
+@app.post("/api/projects/{project_id}/activate")
+def activate_project(project_id: str):
+    if not re.fullmatch(r"default|[a-f0-9]{32}", project_id):
+        raise HTTPException(status_code=404)
+    with project_lock:
+        if load_playlist().get("project_id", "default") == project_id:
+            return {"status": "ok"}
+        path = _project_path(project_id)
+        if not path.is_file():
+            path = _project_directory() / f"{project_id}.json"
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="影片项目不存在")
+        config = load_playlist_model(path).model_dump()
+        _activate_project(config)
+    return {"status": "ok"}
+
+
+class ProjectCreateRequest(BaseModel):
+    name: str
+    duplicate: bool = False
+
+
+@app.post("/api/projects")
+def create_project(req: ProjectCreateRequest):
+    name = req.name.strip()
+    if not 1 <= len(name) <= 100:
+        raise HTTPException(status_code=422, detail="请输入 1–100 字的影片名称")
+    with project_lock:
+        config = load_playlist() if req.duplicate else PlaylistConfig().model_dump()
+        config["project_id"] = uuid.uuid4().hex
+        config["output_sequence_name"] = name
+        _activate_project(config)
+    return {"status": "ok", "id": config["project_id"]}
+
+
+class ProjectImportRequest(BaseModel):
+    urls: list[str]
+    limit: int = 10
+
+
+@app.post("/api/projects/import")
+def import_projects(req: ProjectImportRequest):
+    urls = list(dict.fromkeys(url.strip() for url in req.urls if url.strip()))
+    if not 1 <= len(urls) <= 10 or not 1 <= req.limit <= 100:
+        raise HTTPException(status_code=422, detail="请输入 1–10 个歌单，每个歌单最多 100 首")
+    imported = []
+    try:
+        with tempfile.TemporaryDirectory() as directory:
+            for index, url in enumerate(urls):
+                path = Path(directory) / f"{index}.json"
+                import_netease_playlist(url, limit=req.limit, output_path=path)
+                config = load_playlist_model(path).model_dump()
+                config["project_id"] = uuid.uuid4().hex
+                imported.append(config)
+    except Exception as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    with project_lock:
+        staged = []
+        try:
+            for config in imported[1:]:
+                path = _project_path(config["project_id"])
+                save_playlist_model(config, path)
+                staged.append(path)
+            _activate_project(imported[0])
+        except Exception:
+            for path in staged:
+                path.unlink(missing_ok=True)
+            raise
+    return {"status": "ok", "count": len(imported)}
+
+
 class NeteaseImportRequest(BaseModel):
     url: str
     limit: int = 10
@@ -420,16 +590,58 @@ class NeteaseImportRequest(BaseModel):
 @app.post("/api/netease")
 def import_netease_api(req: NeteaseImportRequest):
     try:
-        count, name = import_netease_playlist(
-            input_str=req.url,
-            limit=req.limit,
-            append=req.append,
-            output_path=PLAYLIST_FILE,
-        )
+        with project_lock:
+            count, name = import_netease_playlist(
+                input_str=req.url,
+                limit=req.limit,
+                append=req.append,
+                output_path=PLAYLIST_FILE,
+            )
         _start_exclusive_task(_worker_preprocess, args=(False,), label="导入后自动预处理")
         return {"status": "ok", "count": count, "playlist_name": name}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/youtube/cookies")
+def youtube_cookies_status():
+    return {"configured": (BASE_PATH / YOUTUBE_COOKIES_FILENAME).is_file()}
+
+
+@app.post("/api/youtube/cookies")
+async def import_youtube_cookies(request: Request, file: UploadFile = File(...)):
+    origin = request.headers.get("origin")
+    if origin and origin != str(request.base_url).rstrip("/"):
+        raise HTTPException(status_code=403, detail="请在工作台内导入")
+    payload = await file.read(1024 * 1024 + 1)
+    if len(payload) > 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Cookie 文件过大")
+    try:
+        lines = payload.decode("utf-8-sig").splitlines()
+    except UnicodeDecodeError as error:
+        raise HTTPException(status_code=422, detail="请选择 Netscape 格式的 cookies.txt") from error
+    if not lines or lines[0] not in {"# Netscape HTTP Cookie File", "# HTTP Cookie File"}:
+        raise HTTPException(status_code=422, detail="请选择 Netscape 格式的 cookies.txt")
+    youtube_rows = []
+    for line in lines[1:]:
+        parts = line.split("\t")
+        domain = parts[0].removeprefix("#HttpOnly_").lstrip(".").lower()
+        if len(parts) == 7 and (domain == "youtube.com" or domain.endswith(".youtube.com")):
+            youtube_rows.append(line)
+    if not youtube_rows:
+        raise HTTPException(status_code=422, detail="文件中没有 YouTube cookies")
+
+    target = BASE_PATH / YOUTUBE_COOKIES_FILENAME
+    fd, temporary = tempfile.mkstemp(prefix=".youtube-cookies-", dir=BASE_PATH)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as output:
+            output.write("# Netscape HTTP Cookie File\n" + "\n".join(youtube_rows) + "\n")
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, target)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+    return {"configured": True}
 
 
 @app.get("/api/bilibili/status")
@@ -521,20 +733,37 @@ class DownloadSingleRequest(BaseModel):
     quality: str = "1080"
 
 
-def _preprocess_after_download(index: int, refresh_norm: bool = True):
+def _preprocess_after_download(
+    index: int,
+    refresh_norm: bool = True,
+    song_key: Optional[tuple[str, str, str]] = None,
+):
     playlist = load_playlist_model(PLAYLIST_FILE)
-    if index < 0 or index >= len(playlist.songs):
+    resolved_idx = _resolve_song_index(playlist.songs, index, song_key)
+    if resolved_idx is None:
         return
-    song = playlist.songs[index]
+    song = playlist.songs[resolved_idx]
+    effective_key = song_key if song_key is not None else _make_song_key(song)
     if refresh_norm:
-        stale_norm = BASE_PATH / "processed" / f"{slug(song.title, song.artist)}_norm.mp4"
+        stale_norm = BASE_PATH / "processed" / normalized_video_name(song)
         if stale_norm.is_file():
             try:
                 stale_norm.unlink()
             except OSError:
                 pass
     preprocess_song(song, BASE_PATH, force=False, log_fn=log_task)
-    save_playlist_model(playlist, PLAYLIST_FILE)
+    latest = load_playlist_model(PLAYLIST_FILE)
+    save_idx = _resolve_song_index(latest.songs, resolved_idx, effective_key)
+    if save_idx is None:
+        return
+    latest_song = latest.songs[save_idx]
+    if song.cover_url and not latest_song.cover_url:
+        latest_song.cover_url = song.cover_url
+    if song.cover_path:
+        latest_song.cover_path = song.cover_path
+    if song.normalized_path:
+        latest_song.normalized_path = song.normalized_path
+    save_playlist_model(latest, PLAYLIST_FILE)
 
 
 def _make_song_key(song) -> tuple[str, str, str]:
@@ -596,22 +825,26 @@ def _worker_download_single(
             return
 
         song = songs[resolved_index]
+        effective_key = song_key if song_key is not None else _make_song_key(song)
         title, artist = song.get("title", ""), song.get("artist", "")
         url = song.get("youtube_url", "").strip()
         _set_task_progress(f"{artist} - {title}", 15)
 
-        out_path = os.path.join(RAW_DIR, slug(title, artist) + ".mp4")
+        raw_dir = os.path.join(BASE_DIR, "raw")
+        os.makedirs(raw_dir, exist_ok=True)
+        out_path = os.path.join(raw_dir, slug(title, artist) + ".mp4")
         if force and os.path.isfile(out_path):
             try:
                 os.remove(out_path)
             except Exception:
                 pass
 
+        auto_found_url = False
         if not url:
             log_task(f"未指定 URL，自动搜索: {title}")
             url = _auto_search_yt_url(title, artist)
             if url:
-                song["youtube_url"] = url
+                auto_found_url = True
 
         if not url:
             log_task(f"未找到可用的下载链接: {title}")
@@ -619,11 +852,20 @@ def _worker_download_single(
 
         log_task(f"开始下载 {title} ({quality}p)...")
         if download_mv(url, out_path, quality=quality, log_fn=log_task):
-            song["file_path"] = to_relative_path(out_path)
-            save_playlist(data)
+            latest = load_playlist()
+            latest_songs = latest.get("songs", [])
+            target_idx = _resolve_song_index(latest_songs, resolved_index, effective_key)
+            if target_idx is None:
+                log_task("下载完成但歌曲已从歌单移除，跳过保存")
+                return
+            target_song = latest_songs[target_idx]
+            if auto_found_url and not target_song.get("youtube_url", "").strip():
+                target_song["youtube_url"] = url
+            target_song["file_path"] = to_relative_path(out_path, base_dir=BASE_DIR)
+            save_playlist(latest)
             _set_task_progress(progress_percent=75)
             log_task(f"下载成功: {title}")
-            _preprocess_after_download(resolved_index, refresh_norm=True)
+            _preprocess_after_download(target_idx, refresh_norm=True, song_key=effective_key)
             _set_task_progress(progress_percent=100)
         else:
             log_task(f"下载失败: {title}")
@@ -652,18 +894,27 @@ def download_single_api(req: DownloadSingleRequest):
 
 def _worker_download_all(force: bool, quality: str):
     try:
-        data = load_playlist()
-        songs = data.get("songs", [])
-        total = max(1, len(songs))
+        initial_data = load_playlist()
+        initial_songs = initial_data.get("songs", [])
+        song_keys = [(i, _make_song_key(s)) for i, s in enumerate(initial_songs)]
+        total = max(1, len(song_keys))
         bili_downloads = 0
         netease_downloads = 0
+        raw_dir = os.path.join(BASE_DIR, "raw")
+        os.makedirs(raw_dir, exist_ok=True)
 
-        for i, song in enumerate(songs):
+        for i, song_key in song_keys:
+            current = load_playlist()
+            current_songs = current.get("songs", [])
+            target_idx = _resolve_song_index(current_songs, i, song_key)
+            if target_idx is None:
+                continue
+            song = current_songs[target_idx]
             title, artist = song.get("title", ""), song.get("artist", "")
-            _set_task_progress(f"[{i+1}/{len(songs)}] {artist} - {title}", int((i / total) * 100))
+            _set_task_progress(f"[{i+1}/{total}] {artist} - {title}", int((i / total) * 100))
 
-            out_path = os.path.join(RAW_DIR, slug(title, artist) + ".mp4")
-            existing_path = resolve_file_path(song.get("file_path", ""))
+            out_path = os.path.join(raw_dir, slug(title, artist) + ".mp4")
+            existing_path = resolve_file_path(song.get("file_path", ""), base_dir=BASE_DIR, raw_dir=raw_dir)
             source_mode = song.get("media_source") or "auto"
             if source_mode == "auto":
                 if existing_path and "_local." in os.path.basename(existing_path):
@@ -671,14 +922,22 @@ def _worker_download_all(force: bool, quality: str):
                 elif song.get("youtube_url", "").strip():
                     source_mode = "video_url"
 
-            if not force and existing_path and os.path.isfile(existing_path):
+            cover_name = Path(out_path).stem + "_cover.mp4"
+            has_raw = bool(existing_path and os.path.isfile(existing_path))
+            is_cover_file = bool(existing_path and Path(existing_path).name == cover_name)
+            if not force and source_mode == "netease_cover":
+                normalized = song.get("normalized_path") or ""
+                if Path(normalized).name == Path(cover_name).stem + "_norm.mp4" and _file_exists(normalized):
+                    log_task(f"跳过已完成的封面合成: {title}")
+                    continue
+            if not force and has_raw and (source_mode == "netease_cover") == is_cover_file:
                 log_task(f"跳过已存在: {title}")
-                _preprocess_after_download(i, refresh_norm=False)
+                _preprocess_after_download(target_idx, refresh_norm=False, song_key=song_key)
                 continue
 
             if source_mode == "local":
                 if existing_path and os.path.isfile(existing_path):
-                    _preprocess_after_download(i, refresh_norm=False)
+                    _preprocess_after_download(target_idx, refresh_norm=False, song_key=song_key)
                 else:
                     log_task(f"[{title}] 设为本地视频但尚未上传文件，跳过")
                 continue
@@ -688,7 +947,10 @@ def _worker_download_all(force: bool, quality: str):
                     time.sleep(1.5)
                 try:
                     pl_model = load_playlist_model(PLAYLIST_FILE)
-                    s_model = pl_model.songs[i]
+                    ne_idx = _resolve_song_index(pl_model.songs, target_idx, song_key)
+                    if ne_idx is None:
+                        continue
+                    s_model = pl_model.songs[ne_idx]
                     res = download_netease_for_song(
                         song=s_model,
                         base_dir=BASE_PATH,
@@ -701,12 +963,22 @@ def _worker_download_all(force: bool, quality: str):
                         log_fn=log_task,
                     )
                     netease_downloads += 1
-                    save_playlist_model(pl_model, PLAYLIST_FILE)
-                    _preprocess_after_download(i, refresh_norm=True)
-                    log_task(f"网易云合成MV [{i+1}/{len(songs)}] {title} ({res['quality']})")
+                    latest_pl = load_playlist_model(PLAYLIST_FILE)
+                    save_idx = _resolve_song_index(latest_pl.songs, ne_idx, song_key)
+                    if save_idx is not None:
+                        latest_song = latest_pl.songs[save_idx]
+                        latest_song.file_path = s_model.file_path
+                        latest_song.normalized_path = ""
+                        if not latest_song.netease_id:
+                            latest_song.netease_id = s_model.netease_id
+                        latest_song.cover_path = s_model.cover_path
+                        latest_song.audio_path = s_model.audio_path
+                        save_playlist_model(latest_pl, PLAYLIST_FILE)
+                        _preprocess_after_download(save_idx, refresh_norm=True, song_key=song_key)
+                    log_task(f"封面合成 MV [{i+1}/{total}] {title} ({res['quality']})")
                 except Exception as ne_err:
                     netease_downloads += 1
-                    log_task(f"网易云合成MV失败 ({title}): {ne_err}")
+                    log_task(f"封面合成 MV失败 ({title}): {ne_err}")
                 continue
 
             if force and os.path.isfile(out_path):
@@ -715,11 +987,12 @@ def _worker_download_all(force: bool, quality: str):
                 except Exception:
                     pass
 
+            auto_found_url = False
             url = song.get("youtube_url", "").strip()
             if not url:
                 url = _auto_search_yt_url(title, artist)
                 if url:
-                    song["youtube_url"] = url
+                    auto_found_url = True
 
             if not url:
                 log_task(f"未找到链接: {title}，跳过")
@@ -729,15 +1002,24 @@ def _worker_download_all(force: bool, quality: str):
                 log_task("[B站] 节流等待 2 秒以防风控...")
                 time.sleep(2.0)
 
-            log_task(f"下载 [{i+1}/{len(songs)}] {title}...")
+            log_task(f"下载 [{i+1}/{total}] {title}...")
             try:
                 if download_mv(url, out_path, quality=quality, log_fn=log_task):
                     if is_bilibili_url(url):
                         bili_downloads += 1
-                    song["file_path"] = to_relative_path(out_path)
-                    save_playlist(data)
+                    latest = load_playlist()
+                    latest_songs = latest.get("songs", [])
+                    save_idx = _resolve_song_index(latest_songs, target_idx, song_key)
+                    if save_idx is None:
+                        log_task(f"下载完成但歌曲已移除: {title}")
+                        continue
+                    latest_song = latest_songs[save_idx]
+                    if auto_found_url and not latest_song.get("youtube_url", "").strip():
+                        latest_song["youtube_url"] = url
+                    latest_song["file_path"] = to_relative_path(out_path, base_dir=BASE_DIR)
+                    save_playlist(latest)
                     log_task(f"下载成功: {title}")
-                    _preprocess_after_download(i, refresh_norm=True)
+                    _preprocess_after_download(save_idx, refresh_norm=True, song_key=song_key)
                 else:
                     log_task(f"下载失败: {title}")
             except Exception as song_err:
@@ -814,6 +1096,7 @@ def _worker_netease_audio_single(
             log_task("歌曲已移除或序号无效，跳过下载")
             return
         song = playlist.songs[resolved_index]
+        effective_key = song_key if song_key is not None else _make_song_key(song)
         mode_label = "封面合成 1080p MP4" if mode == "video" else "纯音频"
         _set_task_progress(f"网易云({mode_label}): {song.artist} - {song.title}", 15)
 
@@ -829,11 +1112,29 @@ def _worker_netease_audio_single(
             fps=min(playlist.fps, 30),
             log_fn=log_task,
         )
-        save_playlist_model(playlist, PLAYLIST_FILE)
+        latest = load_playlist_model(PLAYLIST_FILE)
+        save_idx = _resolve_song_index(latest.songs, resolved_index, effective_key)
+        if save_idx is None:
+            log_task("下载完成但歌曲已从歌单移除，跳过保存")
+            return
+        latest_song = latest.songs[save_idx]
+        if song.netease_id and not latest_song.netease_id:
+            latest_song.netease_id = song.netease_id
+        if song.audio_path:
+            latest_song.audio_path = song.audio_path
+        if mode == "video":
+            if song.cover_url and not latest_song.cover_url:
+                latest_song.cover_url = song.cover_url
+            if song.cover_path:
+                latest_song.cover_path = song.cover_path
+            if song.file_path:
+                latest_song.file_path = song.file_path
+                latest_song.normalized_path = ""
+        save_playlist_model(latest, PLAYLIST_FILE)
         _set_task_progress(progress_percent=80)
 
         if mode == "video":
-            _preprocess_after_download(resolved_index, refresh_norm=True)
+            _preprocess_after_download(save_idx, refresh_norm=True, song_key=effective_key)
             log_task(f"网易云音源 + 封面合成完成: {song.title} ({res['quality']})")
         else:
             log_task(f"网易云纯音频下载完成: {song.title} ({res['quality']})")
@@ -871,12 +1172,18 @@ class NeteaseAudioBatchRequest(BaseModel):
 
 def _worker_netease_audio_batch(mode: str, quality: Optional[str], force: bool, missing_only: bool):
     try:
-        playlist = load_playlist_model(PLAYLIST_FILE)
-        total = max(1, len(playlist.songs))
+        initial_playlist = load_playlist_model(PLAYLIST_FILE)
+        song_keys = [(i, _make_song_key(s)) for i, s in enumerate(initial_playlist.songs)]
+        total = max(1, len(song_keys))
         processed_requests = 0
 
-        for i, song in enumerate(playlist.songs):
-            _set_task_progress(f"网易云 [{i+1}/{len(playlist.songs)}] {song.title}", int((i / total) * 100))
+        for i, song_key in song_keys:
+            current = load_playlist_model(PLAYLIST_FILE)
+            target_idx = _resolve_song_index(current.songs, i, song_key)
+            if target_idx is None:
+                continue
+            song = current.songs[target_idx]
+            _set_task_progress(f"网易云 [{i+1}/{len(song_keys)}] {song.title}", int((i / total) * 100))
 
             if missing_only:
                 if mode == "video" and _file_exists(song.file_path):
@@ -896,16 +1203,33 @@ def _worker_netease_audio_batch(mode: str, quality: Optional[str], force: bool, 
                     mode=mode,
                     quality=quality,
                     force=force,
-                    width=playlist.resolution.width,
-                    height=playlist.resolution.height,
-                    fps=min(playlist.fps, 30),
+                    width=current.resolution.width,
+                    height=current.resolution.height,
+                    fps=min(current.fps, 30),
                     log_fn=log_task,
                 )
                 processed_requests += 1
-                save_playlist_model(playlist, PLAYLIST_FILE)
+                latest = load_playlist_model(PLAYLIST_FILE)
+                save_idx = _resolve_song_index(latest.songs, target_idx, song_key)
+                if save_idx is None:
+                    log_task(f"下载完成但歌曲已移除: {song.title}")
+                    continue
+                latest_song = latest.songs[save_idx]
+                if song.netease_id and not latest_song.netease_id:
+                    latest_song.netease_id = song.netease_id
+                if song.audio_path:
+                    latest_song.audio_path = song.audio_path
                 if mode == "video":
-                    _preprocess_after_download(i, refresh_norm=True)
-                log_task(f"[{i+1}/{len(playlist.songs)}] {song.title} ({res['quality']})")
+                    if song.cover_url and not latest_song.cover_url:
+                        latest_song.cover_url = song.cover_url
+                    if song.cover_path:
+                        latest_song.cover_path = song.cover_path
+                    if song.file_path:
+                        latest_song.file_path = song.file_path
+                save_playlist_model(latest, PLAYLIST_FILE)
+                if mode == "video":
+                    _preprocess_after_download(save_idx, refresh_norm=True, song_key=song_key)
+                log_task(f"[{i+1}/{len(song_keys)}] {song.title} ({res['quality']})")
             except Exception as song_err:
                 processed_requests += 1
                 log_task(f"网易云下载异常 ({song.title}): {song_err}")
@@ -931,7 +1255,7 @@ def netease_audio_download_all_api(req: NeteaseAudioBatchRequest):
 @app.get("/api/status")
 def get_status_api():
     with task_lock:
-        return dict(tasks_state)
+        return {**tasks_state, "logs": list(tasks_state["logs"])}
 
 
 @app.post("/api/logs/clear")
@@ -943,12 +1267,29 @@ def clear_logs_api():
 
 def _worker_preprocess(force: bool):
     try:
-        playlist = load_playlist_model(PLAYLIST_FILE)
-        total = max(1, len(playlist.songs))
-        for i, song in enumerate(playlist.songs):
-            _set_task_progress(f"预处理 [{i+1}/{len(playlist.songs)}] {song.title}", int((i / total) * 100))
+        initial_playlist = load_playlist_model(PLAYLIST_FILE)
+        song_keys = [(i, _make_song_key(s)) for i, s in enumerate(initial_playlist.songs)]
+        total = max(1, len(song_keys))
+        for i, song_key in song_keys:
+            current = load_playlist_model(PLAYLIST_FILE)
+            target_idx = _resolve_song_index(current.songs, i, song_key)
+            if target_idx is None:
+                continue
+            song = current.songs[target_idx]
+            _set_task_progress(f"预处理 [{i+1}/{len(song_keys)}] {song.title}", int((i / total) * 100))
             preprocess_song(song, BASE_PATH, force=force, log_fn=log_task)
-            save_playlist_model(playlist, PLAYLIST_FILE)
+            latest = load_playlist_model(PLAYLIST_FILE)
+            save_idx = _resolve_song_index(latest.songs, target_idx, song_key)
+            if save_idx is None:
+                continue
+            latest_song = latest.songs[save_idx]
+            if song.cover_url and not latest_song.cover_url:
+                latest_song.cover_url = song.cover_url
+            if song.cover_path:
+                latest_song.cover_path = song.cover_path
+            if song.normalized_path:
+                latest_song.normalized_path = song.normalized_path
+            save_playlist_model(latest, PLAYLIST_FILE)
         _set_task_progress(progress_percent=100)
         log_task("全部素材预处理 (1:1 封面 + -14 LUFS 响度统一) 完成")
     except Exception as e:
@@ -1083,6 +1424,9 @@ def _worker_remotion_render(output_name: Optional[str]):
         playlist = load_playlist_model(PLAYLIST_FILE)
         remotion_dir = BASE_PATH / "remotion"
         out_dir = BASE_PATH / "output"
+        project_id = getattr(playlist, "project_id", "default")
+        if isinstance(project_id, str) and re.fullmatch(r"[a-f0-9]{32}", project_id):
+            out_dir /= project_id
         out_dir.mkdir(parents=True, exist_ok=True)
         safe_name = slug(output_name or playlist.output_sequence_name or "music-rec-video", "")
         out_file = out_dir / f"{safe_name}.mp4"

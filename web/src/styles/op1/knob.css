@@ -4,12 +4,9 @@
   gap: 6px;
   min-width: 0;
   text-align: center;
-  --cap: var(--blue);
+  --cap: var(--key-top);
 }
 
-.hardware-knob[data-tone='green'] { --cap: var(--green); }
-.hardware-knob[data-tone='orange'] { --cap: var(--orange); }
-.hardware-knob[data-tone='ivory'] { --cap: #f7f5e8; }
 
 .knob-dial {
   display: grid;
@@ -26,14 +23,14 @@
   position: relative;
   width: 57px;
   aspect-ratio: 1;
-  border: 1px solid #343746;
+  border: 1px solid var(--border-ink);
   border-radius: 50%;
   background:
     radial-gradient(circle at 36% 28%, #fff5, transparent 58%),
     radial-gradient(circle, var(--cap) 0 65%, transparent 66%),
     repeating-conic-gradient(from var(--angle), #15192248 0 5deg, transparent 5deg 12deg),
     var(--cap);
-  box-shadow: inset 0 2px 2px #fffd, inset 0 -3px 3px #16203166, 1px 4px 0 #393d4b, 2px 7px 7px #1d20387a;
+  box-shadow: inset 0 2px 2px var(--highlight), inset 0 -3px 3px #16203166, 0 3px 0 var(--key-edge), 0 5px 6px var(--shadow);
   cursor: ns-resize;
   touch-action: none;
 }
@@ -42,7 +39,7 @@
   content: '';
   position: absolute;
   inset: 5px 25px 30px;
-  background: #262a35;
+  background: var(--ink);
   border-radius: var(--radius-control);
   transform-origin: center 22px;
   transform: rotate(var(--angle));
@@ -57,7 +54,7 @@
   border-radius: var(--radius-control);
   box-shadow: inset 0 1px 3px var(--shadow), 0 1px 0 var(--highlight);
   color: inherit;
-  font: 11px var(--font-mono);
+  font: var(--type-label) var(--font-mono);
 }
 
 .knob-value input {

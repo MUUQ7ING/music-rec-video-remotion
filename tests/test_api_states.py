@@ -1,6 +1,7 @@
 import shutil
 import json
 import os
+import shutil
 import threading
 import time
 from html.parser import HTMLParser
@@ -131,6 +132,28 @@ def test_playlist_runtime_flags_and_roundtrip(client):
     r2 = client.get("/api/playlist").json()
     assert r2["output_sequence_name"] == "Updated Seq"
     assert r2["songs"][1]["reason"] == "Great track"
+
+
+def test_youtube_cookie_import_keeps_other_domains_out(client, isolated_env):
+    bilibili = isolated_env / "cookies.txt"
+    bilibili.write_text("existing Bilibili data")
+    fake_cookie = (
+        "# Netscape HTTP Cookie File\n"
+        "#HttpOnly_.youtube.com\tTRUE\t/\tTRUE\t0\tSESSION\tfake-test-value\n"
+        ".example.com\tTRUE\t/\tTRUE\t0\tSESSION\tother-value\n"
+    )
+    endpoint = "/api/youtube/cookies"
+    assert client.get(endpoint).json() == {"configured": False}
+    upload = {"file": ("cookies.txt", fake_cookie, "text/plain")}
+    assert client.post(endpoint, files=upload, headers={"Origin": "https://example.com"}).status_code == 403
+    assert client.post(endpoint, files=upload).json() == {"configured": True}
+    path = isolated_env / "youtube_cookies.txt"
+    saved = path.read_text()
+    assert "#HttpOnly_.youtube.com" in saved and "other-value" not in saved
+    assert path.stat().st_mode & 0o077 == 0
+    assert bilibili.read_text() == "existing Bilibili data"
+    assert client.post(endpoint, files={"file": ("cookies.txt", "invalid")}).status_code == 422
+    assert path.read_text() == saved
 
 
 def test_media_and_audio_streaming_states(client):
@@ -560,6 +583,33 @@ def test_post_playlist_validation_failure_and_write_error_preserve_disk_file(cli
     assert pl_path.read_bytes() == orig_bytes
 
 
+def test_multiple_imported_playlists_keep_independent_projects(client, seeded_playlist, monkeypatch):
+    from backend.schema import save_playlist
+
+    def import_fixture(url, *, limit, output_path):
+        save_playlist({"output_sequence_name": url, "songs": [{"title": f"Track {url}", "artist": "Artist"}]}, output_path)
+        return 1, url
+
+    monkeypatch.setattr(server, "import_netease_playlist", import_fixture)
+    result = client.post("/api/projects/import", json={"urls": ["101", "102"], "limit": 3})
+    assert result.status_code == 200, result.text
+    catalog = client.get("/api/projects").json()
+    projects = {project["name"]: project["id"] for project in catalog["projects"]}
+    assert set(projects) == {"101", "102", "Test Seq"}
+    assert catalog["active"] == projects["101"]
+
+    current = client.get("/api/playlist").json()
+    current["songs"][0]["reason"] = "First project edit"
+    assert client.post("/api/playlist", json={"data": current}).status_code == 200
+    assert client.post(f"/api/projects/{projects['102']}/activate").status_code == 200
+    assert client.get("/api/playlist").json()["songs"][0]["title"] == "Track 102"
+    assert client.post("/api/playlist", json={"data": current}).status_code == 409
+    assert client.post(f"/api/projects/{projects['101']}/activate").status_code == 200
+    assert client.get("/api/playlist").json()["songs"][0]["reason"] == "First project edit"
+    assert client.post(f"/api/projects/{projects['Test Seq']}/activate").status_code == 200
+    assert client.get("/api/playlist").json()["songs"][0]["title"] == "Song A"
+
+
 def test_netease_import_uses_atomic_schema_save_and_strips_runtime_fields(isolated_env, monkeypatch):
     target = isolated_env / "playlist.json"
     seed = {
@@ -635,3 +685,447 @@ def test_netease_import_uses_atomic_schema_save_and_strips_runtime_fields(isolat
         )
     assert target.read_bytes() == saved_bytes
     assert list(isolated_env.glob(".*.tmp")) == []
+
+
+def test_batch_builds_cover_video_even_when_an_mv_already_exists(seeded_playlist, monkeypatch):
+    from backend.download import slug
+    from backend.schema import load_playlist, save_playlist
+
+    path = seeded_playlist / "playlist.json"
+    playlist = load_playlist(path)
+    playlist.songs[0].media_source = "netease_cover"
+    playlist.songs[1].media_source = "local"
+    save_playlist(playlist, path)
+    calls = []
+
+    def synthesize(*, song, base_dir, mode, force, **kwargs):
+        calls.append((mode, force))
+        song.file_path = f"raw/{slug(song.title, song.artist)}_cover.mp4"
+        shutil.copyfile(FIXTURE_MEDIA_DIR / "color-video.mp4", base_dir / song.file_path)
+        return {"quality": "flac"}
+
+    def normalize(song, root, **kwargs):
+        name = server.normalized_video_name(song)
+        song.normalized_path = f"processed/{name}"
+        shutil.copyfile(FIXTURE_MEDIA_DIR / "color-video.mp4", root / song.normalized_path)
+        return False, True
+
+    monkeypatch.setattr(server, "download_netease_for_song", synthesize)
+    monkeypatch.setattr(server, "preprocess_song", normalize)
+    server._worker_download_all(force=False, quality="1080")
+    saved = load_playlist(path).songs[0]
+    assert saved.file_path.endswith("_cover.mp4")
+    assert saved.normalized_path.endswith("_cover_norm.mp4")
+    assert (seeded_playlist / "raw" / "song_a.mp4").exists()
+
+    (seeded_playlist / saved.file_path).unlink()
+    server._worker_download_all(force=False, quality="1080")
+    assert calls == [("video", False)]
+
+
+def test_worker_download_all_preserves_prior_songs_and_uses_server_base_dir(tmp_path, monkeypatch):
+    import backend.download as dl_mod
+    from backend.schema import PlaylistConfig, SongItem, load_playlist, save_playlist
+
+    for d in ("raw", "processed", "covers", "lyrics", "audio", "output"):
+        (tmp_path / d).mkdir(parents=True, exist_ok=True)
+    wrong_base = tmp_path / "wrong_base"
+    wrong_raw = wrong_base / "raw"
+    wrong_raw.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(server, "BASE_DIR", str(tmp_path))
+    monkeypatch.setattr(server, "BASE_PATH", tmp_path)
+    monkeypatch.setattr(server, "PLAYLIST_FILE", str(tmp_path / "playlist.json"))
+    monkeypatch.setattr(server, "RAW_DIR", str(wrong_raw))
+    monkeypatch.setattr(dl_mod, "BASE_DIR", str(wrong_base))
+    monkeypatch.setattr(dl_mod, "RAW_DIR", str(wrong_raw))
+
+    shutil.copyfile(FIXTURE_MEDIA_DIR / "color-video.mp4", tmp_path / "raw" / "existing_s0.mp4")
+    shutil.copyfile(FIXTURE_MEDIA_DIR / "cover.png", tmp_path / "covers" / "s0.png")
+    shutil.copyfile(FIXTURE_MEDIA_DIR / "cover.png", tmp_path / "covers" / "s1.png")
+
+    pl = PlaylistConfig(
+        output_sequence_name="Batch Download Isolation",
+        songs=[
+            SongItem(
+                title="Song Zero",
+                artist="Artist Zero",
+                netease_id="2001",
+                youtube_url="https://www.bilibili.com/video/BV1s0",
+                file_path="/legacy/abs/existing_s0.mp4",
+                cover_path="covers/s0.png",
+                normalized_path="",
+            ),
+            SongItem(
+                title="Song One",
+                artist="Artist One",
+                netease_id="2002",
+                youtube_url="https://www.bilibili.com/video/BV1s1",
+                file_path="",
+                cover_path="covers/s1.png",
+                normalized_path="",
+            ),
+        ],
+    )
+    save_playlist(pl, tmp_path / "playlist.json")
+
+    downloaded_paths = []
+
+    def fake_download_mv(url, out_path, quality="1080", log_fn=None):
+        downloaded_paths.append(Path(out_path))
+        assert Path(out_path).parent == tmp_path / "raw"
+        shutil.copyfile(FIXTURE_MEDIA_DIR / "color-video.mp4", out_path)
+        return True
+
+    def fake_preprocess_song(song, project_root, force=False, log_fn=None):
+        norm_name = f"{dl_mod.slug(song.title, song.artist)}_norm.mp4"
+        norm_path = project_root / "processed" / norm_name
+        shutil.copyfile(FIXTURE_MEDIA_DIR / "color-video.mp4", norm_path)
+        song.normalized_path = f"processed/{norm_name}"
+        return False, True
+
+    monkeypatch.setattr(server, "download_mv", fake_download_mv)
+    monkeypatch.setattr(server, "preprocess_song", fake_preprocess_song)
+
+    server._worker_download_all(force=False, quality="1080")
+
+    assert len(downloaded_paths) == 1
+    assert downloaded_paths[0].name == "Artist_One_Song_One.mp4"
+
+    saved = load_playlist(tmp_path / "playlist.json")
+    assert saved.songs[0].normalized_path == "processed/Artist_Zero_Song_Zero_norm.mp4"
+    assert saved.songs[0].cover_path == "covers/s0.png"
+    assert saved.songs[1].file_path == "raw/Artist_One_Song_One.mp4"
+    assert saved.songs[1].normalized_path == "processed/Artist_One_Song_One_norm.mp4"
+    assert saved.songs[1].cover_path == "covers/s1.png"
+
+
+def test_worker_download_single_preserves_concurrent_playlist_edits(tmp_path, monkeypatch):
+    import backend.download as dl_mod
+    from backend.schema import PlaylistConfig, SongItem, load_playlist, save_playlist
+
+    for d in ("raw", "processed", "covers", "lyrics", "audio", "output"):
+        (tmp_path / d).mkdir(parents=True, exist_ok=True)
+    wrong_base = tmp_path / "wrong_base"
+    wrong_raw = wrong_base / "raw"
+    wrong_raw.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(server, "BASE_DIR", str(tmp_path))
+    monkeypatch.setattr(server, "BASE_PATH", tmp_path)
+    monkeypatch.setattr(server, "PLAYLIST_FILE", str(tmp_path / "playlist.json"))
+    monkeypatch.setattr(server, "RAW_DIR", str(wrong_raw))
+    monkeypatch.setattr(dl_mod, "BASE_DIR", str(wrong_base))
+    monkeypatch.setattr(dl_mod, "RAW_DIR", str(wrong_raw))
+
+    shutil.copyfile(FIXTURE_MEDIA_DIR / "cover.png", tmp_path / "covers" / "c0.png")
+    pl = PlaylistConfig(
+        output_sequence_name="Initial Seq",
+        songs=[
+            SongItem(
+                title="Title Single",
+                artist="Artist Single",
+                netease_id="3001",
+                youtube_url="https://www.bilibili.com/video/BV1c0",
+                cover_path="covers/c0.png",
+                reason="Before download",
+            )
+        ],
+    )
+    save_playlist(pl, tmp_path / "playlist.json")
+
+    def fake_download_mv(url, out_path, quality="1080", log_fn=None):
+        assert Path(out_path).parent == tmp_path / "raw"
+        shutil.copyfile(FIXTURE_MEDIA_DIR / "color-video.mp4", out_path)
+        concurrent = load_playlist(tmp_path / "playlist.json")
+        concurrent.output_sequence_name = "Concurrent Edit"
+        concurrent.songs[0].reason = "Edited while downloading"
+        save_playlist(concurrent, tmp_path / "playlist.json")
+        return True
+
+    def fake_preprocess_song(song, project_root, force=False, log_fn=None):
+        norm_name = f"{dl_mod.slug(song.title, song.artist)}_norm.mp4"
+        shutil.copyfile(FIXTURE_MEDIA_DIR / "color-video.mp4", project_root / "processed" / norm_name)
+        song.normalized_path = f"processed/{norm_name}"
+        return False, True
+
+    monkeypatch.setattr(server, "download_mv", fake_download_mv)
+    monkeypatch.setattr(server, "preprocess_song", fake_preprocess_song)
+
+    key = server._make_song_key(pl.songs[0])
+    server._worker_download_single(0, force=True, quality="1080", song_key=key)
+
+    saved = load_playlist(tmp_path / "playlist.json")
+    assert saved.output_sequence_name == "Concurrent Edit"
+    assert saved.songs[0].reason == "Edited while downloading"
+    assert saved.songs[0].file_path == "raw/Artist_Single_Title_Single.mp4"
+    assert saved.songs[0].normalized_path == "processed/Artist_Single_Title_Single_norm.mp4"
+
+
+def test_upload_media_unlinks_stale_norm_so_preprocess_renormalizes(client, isolated_env):
+    from backend.download import slug
+    from backend.schema import PlaylistConfig, SongItem, save_playlist
+
+    song_slug = slug("Title X", "Artist X")
+    stale_norm = isolated_env / "processed" / f"{song_slug}_norm.mp4"
+    shutil.copyfile(FIXTURE_MEDIA_DIR / "cover.png", isolated_env / "covers" / "x.png")
+    shutil.copyfile(FIXTURE_MEDIA_DIR / "color-video.mp4", isolated_env / "raw" / "old_mv.mp4")
+    stale_norm.write_bytes(b"OLD_STALE_NORM_BYTES")
+
+    pl = PlaylistConfig(
+        output_sequence_name="Upload Norm Cleanup",
+        songs=[
+            SongItem(
+                title="Title X",
+                artist="Artist X",
+                netease_id="4001",
+                media_source="video_url",
+                file_path="raw/old_mv.mp4",
+                normalized_path=f"processed/{song_slug}_norm.mp4",
+                cover_path="covers/x.png",
+            )
+        ],
+    )
+    save_playlist(pl, isolated_env / "playlist.json")
+
+    new_video_bytes = (FIXTURE_MEDIA_DIR / "project-review.mp4").read_bytes()
+    r_up = client.post(
+        "/api/upload_media/0",
+        files={"file": ("new_local.mp4", new_video_bytes, "video/mp4")},
+    )
+    assert r_up.status_code == 200
+    assert r_up.json()["file_path"] == f"raw/{song_slug}_local.mp4"
+    assert stale_norm.exists() is False
+    assert list((isolated_env / "raw").glob(".*.tmp")) == []
+
+    r_media = client.get("/api/media/0")
+    assert r_media.status_code == 200
+    assert r_media.headers.get("cache-control") == "no-store"
+
+    server._worker_preprocess(force=False)
+
+    assert stale_norm.is_file() is True
+    norm_bytes = stale_norm.read_bytes()
+    assert norm_bytes != b"OLD_STALE_NORM_BYTES"
+    assert b"ftyp" in norm_bytes[:32]
+    s0 = client.get("/api/playlist").json()["songs"][0]
+    assert s0["normalized_path"] == f"processed/{song_slug}_norm.mp4"
+    assert s0["has_normalized"] is True
+
+
+def test_worker_netease_audio_batch_preserves_prior_normalized_path_and_edits(isolated_env, monkeypatch):
+    from backend.download import slug
+    from backend.schema import PlaylistConfig, SongItem, load_playlist, save_playlist
+
+    pl = PlaylistConfig(
+        output_sequence_name="NE Batch Initial",
+        songs=[
+            SongItem(
+                title="Track Zero",
+                artist="Art Zero",
+                netease_id="5001",
+                reason="Original S0 reason",
+            ),
+            SongItem(
+                title="Track One",
+                artist="Art One",
+                netease_id="5002",
+                reason="Original S1 reason",
+            ),
+        ],
+    )
+    save_playlist(pl, isolated_env / "playlist.json")
+
+    monkeypatch.setattr(server.time, "sleep", lambda _sec: None)
+
+    def fake_download_netease(song, base_dir, mode="video", quality=None, force=True, width=1920, height=1080, fps=30, log_fn=None):
+        s_slug = slug(song.title, song.artist)
+        shutil.copyfile(FIXTURE_MEDIA_DIR / "sine-audio.mp3", base_dir / "audio" / f"{s_slug}.mp3")
+        song.audio_path = f"audio/{s_slug}.mp3"
+        if mode == "video":
+            shutil.copyfile(FIXTURE_MEDIA_DIR / "cover.png", base_dir / "covers" / f"{s_slug}.png")
+            shutil.copyfile(FIXTURE_MEDIA_DIR / "color-video.mp4", base_dir / "raw" / f"{s_slug}.mp4")
+            song.cover_path = f"covers/{s_slug}.png"
+            song.file_path = f"raw/{s_slug}.mp4"
+        if song.netease_id == "5002":
+            concurrent = load_playlist(isolated_env / "playlist.json")
+            concurrent.output_sequence_name = "Edited During Batch"
+            concurrent.songs[0].reason = "Concurrent S0 reason"
+            save_playlist(concurrent, isolated_env / "playlist.json")
+        return {"song_id": song.netease_id, "quality": "flac", "audio_path": song.audio_path, "video_path": song.file_path}
+
+    def fake_preprocess_song(song, project_root, force=False, log_fn=None):
+        s_slug = slug(song.title, song.artist)
+        norm_rel = f"processed/{s_slug}_norm.mp4"
+        shutil.copyfile(FIXTURE_MEDIA_DIR / "color-video.mp4", project_root / norm_rel)
+        song.normalized_path = norm_rel
+        return False, True
+
+    monkeypatch.setattr(server, "download_netease_for_song", fake_download_netease)
+    monkeypatch.setattr(server, "preprocess_song", fake_preprocess_song)
+
+    server._worker_netease_audio_batch(mode="video", quality="flac", force=False, missing_only=False)
+
+    saved = load_playlist(isolated_env / "playlist.json")
+    assert saved.output_sequence_name == "Edited During Batch"
+    assert saved.songs[0].reason == "Concurrent S0 reason"
+    assert saved.songs[0].file_path == f"raw/{slug('Track Zero', 'Art Zero')}.mp4"
+    assert saved.songs[0].cover_path == f"covers/{slug('Track Zero', 'Art Zero')}.png"
+    assert saved.songs[0].audio_path == f"audio/{slug('Track Zero', 'Art Zero')}.mp3"
+    assert saved.songs[0].normalized_path == f"processed/{slug('Track Zero', 'Art Zero')}_norm.mp4"
+    assert saved.songs[1].file_path == f"raw/{slug('Track One', 'Art One')}.mp4"
+    assert saved.songs[1].normalized_path == f"processed/{slug('Track One', 'Art One')}_norm.mp4"
+
+
+def test_worker_netease_audio_single_preserves_edits_and_reresolves_on_reorder(isolated_env, monkeypatch):
+    from backend.download import slug
+    from backend.schema import PlaylistConfig, SongItem, load_playlist, save_playlist
+
+    pl = PlaylistConfig(
+        output_sequence_name="NE Single Initial",
+        songs=[
+            SongItem(
+                title="Song First",
+                artist="Art A",
+                netease_id="6001",
+                reason="First reason",
+            ),
+            SongItem(
+                title="Song Target",
+                artist="Art B",
+                netease_id="6002",
+                reason="Before NE single",
+            ),
+        ],
+    )
+    save_playlist(pl, isolated_env / "playlist.json")
+
+    preprocessed_titles = []
+
+    def fake_download_netease(song, base_dir, mode="video", quality=None, force=True, width=1920, height=1080, fps=30, log_fn=None):
+        s_slug = slug(song.title, song.artist)
+        shutil.copyfile(FIXTURE_MEDIA_DIR / "sine-audio.mp3", base_dir / "audio" / f"{s_slug}.mp3")
+        shutil.copyfile(FIXTURE_MEDIA_DIR / "cover.png", base_dir / "covers" / f"{s_slug}.png")
+        shutil.copyfile(FIXTURE_MEDIA_DIR / "color-video.mp4", base_dir / "raw" / f"{s_slug}.mp4")
+        song.audio_path = f"audio/{s_slug}.mp3"
+        song.cover_path = f"covers/{s_slug}.png"
+        song.file_path = f"raw/{s_slug}.mp4"
+
+        concurrent = load_playlist(isolated_env / "playlist.json")
+        concurrent.output_sequence_name = "Reordered Seq"
+        concurrent.songs = [concurrent.songs[1], concurrent.songs[0]]
+        concurrent.songs[0].reason = "Edited during NE single"
+        save_playlist(concurrent, isolated_env / "playlist.json")
+        return {"song_id": song.netease_id, "quality": "flac", "audio_path": song.audio_path, "video_path": song.file_path}
+
+    def fake_preprocess_song(song, project_root, force=False, log_fn=None):
+        preprocessed_titles.append(song.title)
+        s_slug = slug(song.title, song.artist)
+        norm_rel = f"processed/{s_slug}_norm.mp4"
+        shutil.copyfile(FIXTURE_MEDIA_DIR / "color-video.mp4", project_root / norm_rel)
+        song.normalized_path = norm_rel
+
+        concurrent = load_playlist(isolated_env / "playlist.json")
+        concurrent.songs[1].reason = "Edited during preprocess"
+        save_playlist(concurrent, isolated_env / "playlist.json")
+        return False, True
+
+    monkeypatch.setattr(server, "download_netease_for_song", fake_download_netease)
+    monkeypatch.setattr(server, "preprocess_song", fake_preprocess_song)
+
+    key = server._make_song_key(pl.songs[1])
+    server._worker_netease_audio_single(1, mode="video", quality="flac", force=True, song_key=key)
+
+    assert preprocessed_titles == ["Song Target"]
+    saved = load_playlist(isolated_env / "playlist.json")
+    assert saved.output_sequence_name == "Reordered Seq"
+    assert saved.songs[0].title == "Song Target"
+    assert saved.songs[0].reason == "Edited during NE single"
+    assert saved.songs[0].file_path == f"raw/{slug('Song Target', 'Art B')}.mp4"
+    assert saved.songs[0].normalized_path == f"processed/{slug('Song Target', 'Art B')}_norm.mp4"
+    assert saved.songs[1].title == "Song First"
+    assert saved.songs[1].reason == "Edited during preprocess"
+    assert saved.songs[1].normalized_path == ""
+
+
+def test_worker_preprocess_preserves_concurrent_playlist_edits(isolated_env, monkeypatch):
+    from backend.download import slug
+    from backend.schema import PlaylistConfig, SongItem, load_playlist, save_playlist
+
+    pl = PlaylistConfig(
+        output_sequence_name="Prep Initial",
+        songs=[
+            SongItem(title="Prep Zero", artist="Art P0", netease_id="7001", reason="Initial P0"),
+            SongItem(title="Prep One", artist="Art P1", netease_id="7002", start="0:00", end="0:10"),
+        ],
+    )
+    save_playlist(pl, isolated_env / "playlist.json")
+
+    def fake_preprocess_song(song, project_root, force=False, log_fn=None):
+        s_slug = slug(song.title, song.artist)
+        song.cover_path = f"covers/{s_slug}.png"
+        song.normalized_path = f"processed/{s_slug}_norm.mp4"
+        if song.netease_id == "7001":
+            concurrent = load_playlist(isolated_env / "playlist.json")
+            concurrent.output_sequence_name = "Concurrent Prep Seq"
+            concurrent.songs[0].reason = "Updated during prep"
+            concurrent.songs[1].start = "0:03.0"
+            save_playlist(concurrent, isolated_env / "playlist.json")
+        return True, True
+
+    monkeypatch.setattr(server, "preprocess_song", fake_preprocess_song)
+
+    server._worker_preprocess(force=False)
+
+    saved = load_playlist(isolated_env / "playlist.json")
+    assert saved.output_sequence_name == "Concurrent Prep Seq"
+    assert saved.songs[0].reason == "Updated during prep"
+    assert saved.songs[0].cover_path == f"covers/{slug('Prep Zero', 'Art P0')}.png"
+    assert saved.songs[0].normalized_path == f"processed/{slug('Prep Zero', 'Art P0')}_norm.mp4"
+    assert saved.songs[1].start == "0:03.0"
+    assert saved.songs[1].normalized_path == f"processed/{slug('Prep One', 'Art P1')}_norm.mp4"
+
+
+def test_worker_analyze_visuals_preserves_concurrent_playlist_edits(isolated_env, monkeypatch):
+    from backend.download import slug
+    from backend.schema import PlaylistConfig, SongItem, load_playlist, save_playlist
+
+    pl = PlaylistConfig(
+        output_sequence_name="Visual Initial",
+        songs=[
+            SongItem(title="Vis Zero", artist="Art V0", netease_id="8001", reason="Initial V0", start="0:00", end="0:12"),
+            SongItem(title="Vis One", artist="Art V1", netease_id="8002", reason="Initial V1"),
+        ],
+    )
+    save_playlist(pl, isolated_env / "playlist.json")
+
+    def fake_fetch_lyrics(song, project_root, force=False, log=None):
+        s_slug = slug(song.title, song.artist)
+        lyrics_rel = f"lyrics/{s_slug}.json"
+        (project_root / lyrics_rel).write_text("{}", encoding="utf-8")
+        song.lyrics_path = lyrics_rel
+        return project_root / lyrics_rel
+
+    def fake_analyze_visuals(song, project_root, log=None):
+        bright = {"index": True, "reason": False, "bottom": True}
+        song.detected_bright = bright
+        if song.netease_id == "8001":
+            concurrent = load_playlist(isolated_env / "playlist.json")
+            concurrent.output_sequence_name = "Concurrent Visual Seq"
+            concurrent.songs[0].reason = "Updated during visuals"
+            concurrent.songs[0].start = "0:04.5"
+            save_playlist(concurrent, isolated_env / "playlist.json")
+        return {"title": song.title, "bright": bright, "is_static": False, "mad": 5.0}
+
+    monkeypatch.setattr(server, "fetch_and_save_lyrics", fake_fetch_lyrics)
+    monkeypatch.setattr(server, "analyze_song_visuals", fake_analyze_visuals)
+
+    server._worker_analyze_visuals()
+
+    saved = load_playlist(isolated_env / "playlist.json")
+    assert saved.output_sequence_name == "Concurrent Visual Seq"
+    assert saved.songs[0].reason == "Updated during visuals"
+    assert saved.songs[0].start == "0:04.5"
+    assert saved.songs[0].lyrics_path == f"lyrics/{slug('Vis Zero', 'Art V0')}.json"
+    assert saved.songs[0].detected_bright == {"index": True, "reason": False, "bottom": True}
+    assert saved.songs[1].lyrics_path == f"lyrics/{slug('Vis One', 'Art V1')}.json"
+    assert saved.songs[1].detected_bright == {"index": True, "reason": False, "bottom": True}

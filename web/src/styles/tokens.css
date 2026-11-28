@@ -128,8 +128,15 @@
 }
 
 :root {
-  --font-sans: 'Space Grotesk', 'Archivo', 'SF Pro Text', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
-  --font-mono: 'IBM Plex Mono', 'JetBrains Mono', 'SF Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-sans: 'Archivo Variable', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-mono: var(--font-sans);
+  --type-legend: 10px;
+  --type-label: 11px;
+  --type-control: 12px;
+  --type-reading: 14px;
+  --type-title: 16px;
+  --type-readout: 24px;
+  --type-display: 34px;
   --shell-inset: 12px;
   --radius-shell: 18px;
   --radius-panel: 2px;

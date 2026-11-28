@@ -1,3 +1,4 @@
+import { isPublicDemo } from '../api/publicDemo';
 import { SourceMatrixView } from './SourceMatrixView';
 import { StageFxView } from './StageFxView';
 import { ColumnDivider } from '../components/ColumnDivider';
@@ -11,7 +12,7 @@ import { SafeImage } from '../components/ui/SafeImage';
 import { TactileButton } from '../components/ui/TactileButton';
 import { useStudioStore } from '../state/useStudioStore';
 import { releaseMeterGraph } from '../utils/audioMeter';
-import { coverSrc, fmtSec } from '../utils/time';
+import { coverSrc, fmtSec, parseSec } from '../utils/time';
 
 const TrackCompositionPreview = lazy(() => import('../components/TrackCompositionPreview'));
 
@@ -22,6 +23,10 @@ export function MonitorTrimView() {
     activeSong,
     activeClips,
     activeClipIdx,
+    activeClip,
+    playlist,
+    seekTo,
+    onFxTimeUpdate,
     activeMediaUrl,
     trimCurrentSec,
     trimTotalSec,
@@ -36,7 +41,7 @@ export function MonitorTrimView() {
     downloadSingle,
   } = useStudioStore();
 
-  const [showEffect, setShowEffect] = useState(false);
+  const [showEffect, setShowEffect] = useState(isPublicDemo);
   const [effectPlaying, setEffectPlaying] = useState(false);
   const effectPlayer = useRef<PlayerRef>(null);
 
@@ -52,6 +57,15 @@ export function MonitorTrimView() {
     window.addEventListener('keydown', onSpace, true);
     return () => window.removeEventListener('keydown', onSpace, true);
   }, [showEffect]);
+
+  const seekEffect = (seconds: number) => {
+    const player = effectPlayer.current;
+    if (!player) return;
+    const fps = playlist.fps || 60;
+    const start = parseSec(activeClip?.start);
+    const frames = Math.max(fps, Math.round((parseSec(activeClip?.end) - start) * fps));
+    player.seekTo(Math.max(0, Math.min(frames - 1, Math.round((seconds - start) * fps))));
+  };
 
   const initialSplit = (() => {
     const v = parseFloat(localStorage.getItem('mrv_side_split') || '50');
@@ -116,16 +130,18 @@ export function MonitorTrimView() {
         <section className="monitor-col" aria-label="Monitor and trim">
           <div className="monitor-module-header">
             <h2>Monitor</h2>
-            <TactileButton aria-pressed={showEffect} onClick={() => { videoRef.current?.pause(); setEffectPlaying(false); setShowEffect(value => !value); }}>
+            <TactileButton aria-pressed={showEffect} onClick={() => { videoRef.current?.pause(); if (showEffect) seekTo(trimCurrentSec); setEffectPlaying(false); setShowEffect(value => !value); }}>
               {showEffect ? 'Source Preview' : 'FX Preview'}
             </TactileButton>
           </div>
           <div className="clip-strip">
             {activeClips.map((clip, cIdx) => (
-              <button
+              <TactileButton customLayout
                 key={cIdx}
                 type="button"
                 data-testid={`clip-pill-${cIdx}`}
+                active={cIdx === activeClipIdx}
+                aria-pressed={cIdx === activeClipIdx}
                 className={cIdx === activeClipIdx ? 'clip-pill active' : 'clip-pill'}
                 onClick={() => switchTrimClip(cIdx)}
               >
@@ -133,7 +149,7 @@ export function MonitorTrimView() {
                 <span>
                   {clip.start}–{clip.end}
                 </span>
-              </button>
+              </TactileButton>
             ))}
 
             <TactileButton
@@ -189,8 +205,8 @@ export function MonitorTrimView() {
                       className="screen-empty-cover"
                       fallback={null}
                     />
-                    <div className="mono">NO VIDEO SIGNAL FOR TRACK {activeIdx + 1}</div>
-                    <div className="empty-card-actions">
+                    <div className="mono">{isPublicDemo ? 'COVER ONLY · ONLINE DEMO' : `NO VIDEO SIGNAL FOR TRACK ${activeIdx + 1}`}</div>
+                    {!isPublicDemo && <div className="empty-card-actions">
                       <TactileButton
                         size="sm"
                         onClick={() => setActiveTab('source')}
@@ -204,7 +220,7 @@ export function MonitorTrimView() {
                       >
                         队列下载 MV
                       </TactileButton>
-                    </div>
+                    </div>}
                   </div>
                 )}
               </div>
@@ -213,8 +229,8 @@ export function MonitorTrimView() {
             </div>
           </div>
 
-          {showEffect && <div className="song-effect-preview"><Suspense fallback={<p>Loading FX preview…</p>}><TrackCompositionPreview transportRef={effectPlayer} onPlaybackChange={setEffectPlaying} /></Suspense></div>}
-          <TapeScrubber previewTransport={showEffect ? { playing: effectPlaying, toggle: () => effectPlayer.current?.toggle() } : undefined} />
+          {showEffect && <div className="song-effect-preview"><Suspense fallback={<p>Loading FX preview…</p>}><TrackCompositionPreview transportRef={effectPlayer} onPlaybackChange={setEffectPlaying} onSourceTimeChange={onFxTimeUpdate} /></Suspense></div>}
+          <TapeScrubber previewTransport={showEffect ? { playing: effectPlaying, toggle: () => effectPlayer.current?.toggle(), seek: seekEffect } : undefined} />
         </section>
 
         <div ref={sideStackRef} className="side-stack" style={activeTab === 'trim' ? sideStackStyle : { gridTemplateRows: 'minmax(0, 1fr)' }}>
@@ -224,7 +240,7 @@ export function MonitorTrimView() {
               {activeTab === 'source' ? <SourceMatrixView /> : <StageFxView embedded />}
             </div>
           ) : <>
-          <LyricsPanel />
+          <LyricsPanel onPreviewSeek={showEffect ? seekEffect : undefined} />
           <div
             className={draggingSplit ? 'side-splitter active' : 'side-splitter'}
             data-testid="side-splitter"

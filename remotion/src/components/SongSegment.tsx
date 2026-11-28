@@ -118,6 +118,8 @@ export const SongSegment: React.FC<SongSegmentProps> = ({
   const startSec = parseTime(activeStart);
   const startFrom = Math.max(0, Math.round(startSec * fps));
 
+  const visualEffect = clipOverride?.visual_effect ?? song.visual_effect;
+  const visualModifiers = clipOverride?.visual_modifiers ?? song.visual_modifiers;
   const videoPath = song.normalized_path || song.file_path;
   const videoUrl = resolveAssetUrl(videoPath, mediaBaseUrl);
   const audioUrl = resolveAssetUrl(song.audio_path, mediaBaseUrl);
@@ -251,8 +253,8 @@ export const SongSegment: React.FC<SongSegmentProps> = ({
     <AbsoluteFill style={{ backgroundColor: '#000000' }}>
       {/* V1: Base MV Video (wrapped in optional cover/beat/glitch visual effect) */}
       <VisualEffects
-        effect={song.visual_effect}
-        modifiers={song.visual_modifiers}
+        effect={visualEffect}
+        modifiers={visualModifiers}
         audioSrc={mediaAudioUrl}
         startSec={startSec}
         coverUrl={coverUrl}
@@ -470,7 +472,7 @@ export const SongSegment: React.FC<SongSegmentProps> = ({
         </div>
 
         {/* Right-centered Bilingual Lyrics inside glass bar (hidden when lyric_stage already displays full scrolling lyrics) */}
-        {activeLyric && song.visual_effect !== 'lyric_stage' ? (
+        {activeLyric && visualEffect !== 'lyric_stage' ? (
           <div
             style={{
               position: 'absolute',

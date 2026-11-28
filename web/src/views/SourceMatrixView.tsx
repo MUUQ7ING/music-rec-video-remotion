@@ -64,7 +64,7 @@ export function SourceMatrixView() {
     e.target.value = '';
   };
 
-  const handleDrop = async (e: DragEvent<HTMLDivElement>) => {
+  const handleDrop = async (e: DragEvent<HTMLElement>) => {
     e.preventDefault();
     setLocalDragActive(false);
     const file = e.dataTransfer?.files?.[0];
@@ -89,7 +89,7 @@ export function SourceMatrixView() {
             },
             {
               value: 'netease_cover',
-              label: '网易云合成',
+              label: '封面合成',
               testId: 'source-mode-netease_cover',
             },
             {
@@ -176,47 +176,30 @@ export function SourceMatrixView() {
                       {activeCandidates.map((cand, cIdx) => {
                         const selected = activeSong.youtube_url === cand.url;
                         return (
-                          <div
-                            key={`${cand.id}-${cIdx}`}
-                            role="button"
-                            tabIndex={0}
-                            data-testid={`cand-card-${cIdx}`}
-                            className={selected ? 'cand-card selected' : 'cand-card'}
-                            onClick={() => adoptCandidate(cand, false)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' || e.key === ' ') {
-                                e.preventDefault();
-                                adoptCandidate(cand, false);
-                              }
-                            }}
-                          >
-                            <div className="cand-thumb">
-                              <SafeImage
-                                src={cand.thumbnail}
-                                alt={cand.title}
-                                fallback={<span className="mono">{cand.platform.toUpperCase()}</span>}
-                              />
-                              <span className="cand-badge tl">{cand.platform.toUpperCase()}</span>
-                              <span className="cand-badge br">{cand.duration_str || '--'}</span>
-                              {selected ? <span className="cand-badge tr">LOCKED</span> : null}
-                            </div>
-                            <div className="cand-body">
-                              <div className="cand-title">{cand.title}</div>
-                              <div className="cand-foot">
-                                <span className="cand-uploader">{cand.uploader || 'Unknown'}</span>
-                                <div className="cand-actions">
-                                  <TactileButton
-                                    size="xs"
-                                    variant="accent"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      adoptCandidate(cand, true);
-                                    }}
-                                  >
-                                    下载
-                                  </TactileButton>
-                                </div>
-                              </div>
+                          <div key={`${cand.id}-${cIdx}`} className={selected ? 'cand-card selected' : 'cand-card'}>
+                            <TactileButton
+                              customLayout
+                              className="cand-select"
+                              data-testid={`cand-card-${cIdx}`}
+                              onClick={() => adoptCandidate(cand, false)}
+                            >
+                              <span className="cand-thumb">
+                                <SafeImage
+                                  src={cand.thumbnail}
+                                  alt={cand.title}
+                                  fallback={<span className="mono">{cand.platform.toUpperCase()}</span>}
+                                />
+                                <span className="cand-badge tl">{cand.platform.toUpperCase()}</span>
+                                <span className="cand-badge br">{cand.duration_str || '--'}</span>
+                                {selected ? <span className="cand-badge tr">LOCKED</span> : null}
+                              </span>
+                              <span className="cand-title">{cand.title}</span>
+                            </TactileButton>
+                            <div className="cand-foot">
+                              <span className="cand-uploader">{cand.uploader || 'Unknown'}</span>
+                              <TactileButton size="xs" onClick={() => adoptCandidate(cand, true)}>
+                                下载
+                              </TactileButton>
                             </div>
                           </div>
                         );
@@ -308,7 +291,7 @@ export function SourceMatrixView() {
           ) : activeSourceMode === 'netease_cover' ? (
             <>
               <div className="panel-head">
-                <span>NETEASE COVER VIDEO STAGE</span>
+                <span>COVER VIDEO STAGE</span>
                 <span className="mono">{activeSong.has_file ? 'READY' : 'SYNTH PENDING'}</span>
               </div>
               <div className="stage-focus">
@@ -421,9 +404,7 @@ export function SourceMatrixView() {
                     </div>
                   </>
                 ) : (
-                  <div
-                    role="button"
-                    tabIndex={0}
+                  <TactileButton customLayout
                     className={
                       localDragActive ? 'stage-drop-hero drag-active' : 'stage-drop-hero'
                     }
@@ -441,9 +422,9 @@ export function SourceMatrixView() {
                     onDragLeave={() => setLocalDragActive(false)}
                     onDrop={handleDrop}
                   >
-                    <div className="mono">拖拽或点击选择本地 MP4 / MOV / MKV</div>
-                    <div className="transport-hint">支持将文件直接拖到此处</div>
-                  </div>
+                    <span className="mono">拖拽或点击选择本地 MP4 / MOV / MKV</span>
+                    <span className="transport-hint">支持将文件直接拖到此处</span>
+                  </TactileButton>
                 )}
               </div>
             </>

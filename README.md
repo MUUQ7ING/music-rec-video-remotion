@@ -10,6 +10,8 @@
 
 [下载示例歌单 JSON](examples/a-beautiful-future.json)
 
+本地版使用从 [Andeus Design 源码](https://github.com/ardey26/andeus-design/tree/94c08bb776db5412799ed3f75ac039bc6c5e8121) 构建的组件包。全片编辑可从左侧选曲，在磁带轴下方修改所选片段的推荐文案。
+
 ## 📂 项目结构
 
 ```text
@@ -25,9 +27,9 @@ music-rec-video/
 │   ├── lyrics.py                   ←    网易云 YRC 毫秒级逐词 & LRC 双语歌词解析与 SRT 导出
 │   └── analyze_visuals.py          ←    画面分区亮度分析（文字阴影自适应对比度）
 ├── web/                            ← 🖥️ React + TypeScript 工业风工作台（Teenage Engineering 风格）
-│   ├── index.html                  ←    Rack + Deck 三标签页 + 底部实时控制台模板
-│   ├── app.js                      ←    状态管理、快捷键、多段定剪与下载队列逻辑
-│   └── style.css                   ←    亮/暗双主题设计系统（data-theme）与响应式布局
+│   ├── src/                        ←    工作台组件、状态管理、样式与快捷键
+│   ├── vendor/                     ←    从 Andeus 上游源码构建的组件包
+│   └── dist/                       ←    FastAPI 提供的前端构建文件
 ├── remotion/                       ← 🎬 Remotion 视频工程（React + TypeScript）
 │   ├── remotion.config.ts          ←    ANGLE WebGL2 渲染配置
 │   └── src/
@@ -56,7 +58,7 @@ music-rec-video/
 
 ## 🚀 环境准备
 
-确保已安装 **Python 3.10+、Node.js 22.12+、FFmpeg**：
+确保已安装 **Python 3.10+、Node.js 18+、FFmpeg**：
 
 ```bash
 # 1. 安装 Python 依赖

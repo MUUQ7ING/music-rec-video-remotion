@@ -3,7 +3,7 @@ import { splitReasonParagraphs } from '../utils/time';
 import { Segmented } from './ui/Segmented';
 import { TactileButton } from './ui/TactileButton';
 
-export function ReasonPanel() {
+export function ReasonPanel({ onStamp }: { onStamp?: (index: number) => void } = {}) {
   const {
     activeClipIdx,
     activeClip,
@@ -65,7 +65,7 @@ export function ReasonPanel() {
                 />
                 <TactileButton
                   size="xs"
-                  onClick={() => stampClipReasonTiming(pIdx)}
+                  onClick={() => (onStamp ?? stampClipReasonTiming)(pIdx)}
                 >
                   打点
                 </TactileButton>

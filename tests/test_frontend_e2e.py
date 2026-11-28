@@ -404,6 +404,21 @@ def _seed_sync_lyrics_media(seeded_playlist):
     save_playlist(pl, pl_path)
 
 
+def test_batch_imports_youtube_cookie_file(browser_page):
+    page, url, runtime = browser_page
+    _goto_studio(page, url)
+    page.get_by_test_id("batch-menu-btn").click()
+    with page.expect_file_chooser() as chooser:
+        page.get_by_role("button", name="导入 YouTube Cookies").click()
+    chooser.value.set_files({
+        "name": "cookies.txt",
+        "mimeType": "text/plain",
+        "buffer": b"# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t0\tSESSION\tfake-test-value\n",
+    })
+    _expect_contains(page.get_by_test_id("batch-menu-panel").get_by_role("status"), "已导入")
+    runtime.assert_clean()
+
+
 def test_empty_playlist_and_add_track(browser_page, seeded_playlist):
     page, url, runtime = browser_page
     save_playlist(
@@ -429,6 +444,31 @@ def test_empty_playlist_and_add_track(browser_page, seeded_playlist):
 
     _reload_and_hydrate(page, has_songs=True)
     page.get_by_test_id("rack-song-0").wait_for(state="visible", timeout=5000)
+    runtime.assert_clean()
+
+
+def test_create_duplicate_and_switch_video_projects(browser_page, seeded_playlist):
+    page, url, runtime = browser_page
+    _goto_studio(page, url)
+    page.get_by_role("button", name="+ Project", exact=True).click()
+    page.get_by_label("Project name", exact=True).fill("Second edit")
+    page.get_by_role("checkbox", name="Copy current playlist and edits").check()
+    page.get_by_role("button", name="Create", exact=True).click()
+    from playwright.sync_api import expect
+    expect(page.get_by_test_id("seq-name-input")).to_have_value("Second edit")
+    assert page.get_by_test_id("rack-song-0").is_visible()
+    active_id = json.loads((seeded_playlist / "playlist.json").read_text())["project_id"]
+    assert (seeded_playlist / "playlist_projects" / "default" / "playlist.json").is_file()
+
+    page.get_by_role("button", name="+ Project", exact=True).click()
+    page.get_by_label("Project name", exact=True).fill("Blank edit")
+    page.get_by_role("button", name="Create", exact=True).click()
+    expect(page.get_by_test_id("seq-name-input")).to_have_value("Blank edit")
+    assert page.get_by_test_id("empty-state").is_visible()
+    assert (seeded_playlist / "playlist_projects" / active_id / "playlist.json").is_file()
+    page.get_by_role("combobox", name="Video project").select_option(active_id)
+    expect(page.get_by_test_id("seq-name-input")).to_have_value("Second edit")
+    assert page.get_by_test_id("rack-song-0").is_visible()
     runtime.assert_clean()
 
 
@@ -561,13 +601,13 @@ def test_intro_auto_duration_and_global_transition(browser_page, seeded_playlist
     assert not dur_input.is_enabled()
 
     intro_main = page.locator("main")
-    intro_main.get_by_role("radio", name="IMAGE").click()
+    intro_main.get_by_role("tab", name="IMAGE").click()
     bg_img_input = intro_main.get_by_placeholder("covers/intro_bg.jpg")
     bg_img_input.wait_for(state="visible", timeout=3000)
     bg_img_input.fill("covers/song_a.png")
-    intro_main.get_by_role("radio", name="BLACK").click()
-    intro_main.get_by_role("radio", name="BLUR TRK 01").click()
-    assert intro_main.get_by_role("radio", name="BLUR TRK 01").get_attribute("aria-checked") == "true"
+    intro_main.get_by_role("tab", name="BLACK").click()
+    intro_main.get_by_role("tab", name="BLUR TRK 01").click()
+    assert intro_main.get_by_role("tab", name="BLUR TRK 01").get_attribute("aria-selected") == "true"
 
     page.get_by_test_id("global-transition-select").select_option("light_leak")
     page.get_by_role("slider", name="Video duration").press("ArrowRight")
@@ -600,11 +640,61 @@ def test_intro_auto_duration_and_global_transition(browser_page, seeded_playlist
     page.get_by_test_id("global-transition-select").wait_for(state="visible", timeout=5000)
     assert page.get_by_test_id("global-transition-select").input_value() == "light_leak"
     assert "第二段开场白" in page.get_by_test_id("intro-text-input").input_value()
-    assert page.locator("main").get_by_role("radio", name="BLUR TRK 01").get_attribute("aria-checked") == "true"
+    assert page.locator("main").get_by_role("tab", name="BLUR TRK 01").get_attribute("aria-selected") == "true"
     persisted_intro = json.loads((seeded_playlist / "playlist.json").read_text(encoding="utf-8"))
     assert persisted_intro["intro"]["bg_mode"] == "blur_first_song"
     assert persisted_intro["transition"]["video_duration"] == 0.7
     assert persisted_intro["transition"]["audio_duration"] == 4.2
+    runtime.assert_clean()
+
+
+def test_multiclip_fx_overrides_stay_independent(browser_page, seeded_playlist):
+    page, url, runtime = browser_page
+    _goto_studio(page, url)
+    page.get_by_test_id("add-clip-btn").click()
+    page.get_by_test_id("tab-stage").click()
+    effect = page.get_by_test_id("fx-visual-select")
+    effect.select_option("cyber_hud")
+    expected = effect.input_value()
+    page.get_by_test_id("fx-mod-beat_pulse").click()
+    page.get_by_test_id("clip-pill-0").click()
+    assert effect.input_value() == "inherit"
+    assert page.get_by_test_id("fx-mod-beat_pulse").get_attribute("aria-pressed") == "false"
+    page.get_by_test_id("clip-pill-1").click()
+    assert effect.input_value() == expected
+    assert page.get_by_test_id("fx-mod-beat_pulse").get_attribute("aria-pressed") == "true"
+    page.get_by_test_id("meta-save-btn").click()
+    _expect_contains(page.get_by_test_id("save-chip"), "SAVED")
+    saved = json.loads((seeded_playlist / "playlist.json").read_text())
+    first, second = saved["songs"][0]["clips"]
+    assert not first.get("visual_effect")
+    assert second["visual_effect"] == expected
+    assert second["visual_modifiers"] == ["beat_pulse"]
+    runtime.assert_clean()
+
+
+def test_fx_preview_syncs_lyrics_to_selected_clip(browser_page, seeded_playlist):
+    page, url, runtime = browser_page
+    _seed_sync_lyrics_media(seeded_playlist)
+    path = seeded_playlist / "playlist.json"
+    playlist = json.loads(path.read_text())
+    playlist["songs"][0]["clips"] = [{"start": "0:01.0", "end": "0:04.0"}, {"start": "0:02.5", "end": "0:04.0"}]
+    save_playlist(playlist, path)
+    _goto_studio(page, url)
+
+    first = page.get_by_test_id("lyric-row-0")
+    second = page.get_by_test_id("lyric-row-1")
+    from playwright.sync_api import expect
+    page.get_by_role("button", name="FX Preview", exact=True).click()
+    page.locator(".song-effect-preview video").first.wait_for()
+    expect(first).to_have_attribute("data-active", "true")
+    page.get_by_test_id("transport-play").click()
+    expect(second).to_have_attribute("data-active", "true", timeout=5000)
+    page.get_by_test_id("transport-play").click()
+    first.click()
+    expect(first).to_have_attribute("data-active", "true")
+    page.get_by_test_id("clip-pill-1").click()
+    expect(second).to_have_attribute("data-active", "true")
     runtime.assert_clean()
 
 
@@ -778,6 +868,45 @@ def test_monitor_multiclip_lyrics_sync_and_manual_copy(browser_page, seeded_play
 
     io_in = page.get_by_test_id("io-in-box")
     io_out = page.get_by_test_id("io-out-box")
+
+    page.evaluate(
+        """(t) => {
+          const v = document.querySelector('[data-testid="monitor-video"]');
+          v.currentTime = t;
+          v.dispatchEvent(new Event('timeupdate'));
+        }""",
+        0.0,
+    )
+    page.wait_for_timeout(60)
+    io_in.get_by_role("button", name="Set I", exact=True).click()
+    _expect_exact(io_in.locator(".io-readout"), "0:00.0")
+    io_out.get_by_role("button", name="Set O", exact=True).click()
+    _expect_exact(io_out.locator(".io-readout"), "0:00.5")
+
+    page.evaluate(
+        """(t) => {
+          const v = document.querySelector('[data-testid="monitor-video"]');
+          v.currentTime = t;
+          v.dispatchEvent(new Event('timeupdate'));
+        }""",
+        1.2,
+    )
+    page.wait_for_timeout(60)
+    io_in.get_by_role("button", name="Set I", exact=True).click()
+    _expect_exact(io_in.locator(".io-readout"), "0:01.2")
+
+    page.evaluate(
+        """(t) => {
+          const v = document.querySelector('[data-testid="monitor-video"]');
+          v.currentTime = t;
+          v.dispatchEvent(new Event('timeupdate'));
+        }""",
+        3.8,
+    )
+    page.wait_for_timeout(60)
+    io_out.get_by_role("button", name="Set O", exact=True).click()
+    _expect_exact(io_out.locator(".io-readout"), "0:03.8")
+
     io_in.get_by_role("button", name="+0.1s", exact=True).click()
     io_out.get_by_role("button", name="-0.1s", exact=True).click()
     page.get_by_test_id("transport-loop").click()
@@ -806,6 +935,37 @@ def test_monitor_multiclip_lyrics_sync_and_manual_copy(browser_page, seeded_play
         1.8,
     )
     page.wait_for_timeout(80)
+    page.get_by_test_id("timing-row-1").get_by_role("button", name="打点").click()
+    stamped_val = page.get_by_test_id("timing-row-1").locator("input").input_value()
+
+    page.get_by_test_id("reason-mode-auto").click()
+    assert page.get_by_test_id("timing-row-0").count() == 0
+    assert page.get_by_test_id("timing-row-1").count() == 0
+    page.get_by_test_id("reason-mode-manual").click()
+    page.get_by_test_id("timing-row-1").wait_for(state="visible", timeout=3000)
+    assert page.get_by_test_id("timing-row-1").locator("input").input_value() == stamped_val
+
+    page.evaluate(
+        """(t) => {
+          const v = document.querySelector('[data-testid="monitor-video"]');
+          v.currentTime = t;
+          v.dispatchEvent(new Event('timeupdate'));
+        }""",
+        0.1,
+    )
+    page.wait_for_timeout(60)
+    page.get_by_test_id("timing-row-1").get_by_role("button", name="打点").click()
+    assert float(page.get_by_test_id("timing-row-1").locator("input").input_value()) == 0.0
+
+    page.evaluate(
+        """(t) => {
+          const v = document.querySelector('[data-testid="monitor-video"]');
+          v.currentTime = t;
+          v.dispatchEvent(new Event('timeupdate'));
+        }""",
+        1.8,
+    )
+    page.wait_for_timeout(60)
     page.get_by_test_id("timing-row-1").get_by_role("button", name="打点").click()
 
     page.get_by_test_id("apply-trim-save-btn").click()
@@ -878,6 +1038,24 @@ def test_monitor_multiclip_lyrics_sync_and_manual_copy(browser_page, seeded_play
     )
     collapsed = json.loads((seeded_playlist / "playlist.json").read_text(encoding="utf-8"))
     assert collapsed["songs"][0]["clips"] == []
+
+    dur_before = page.locator(".screen-bar").inner_text()
+    assert "0:04.5" in dur_before
+    page.get_by_test_id("rack-song-0").click()
+    page.wait_for_timeout(80)
+    assert "0:04.5" in page.locator(".screen-bar").inner_text()
+    page.get_by_test_id("rack-song-0").focus()
+    page.keyboard.press("Space")
+    page.wait_for_function(
+        "() => { const v = document.querySelector('[data-testid=\"monitor-video\"]'); return v && !v.paused; }",
+        timeout=3000,
+    )
+    assert "0:04.5" in page.locator(".screen-bar").inner_text()
+    page.keyboard.press("Space")
+    page.wait_for_function(
+        "() => { const v = document.querySelector('[data-testid=\"monitor-video\"]'); return v && v.paused; }",
+        timeout=3000,
+    )
     runtime.assert_clean()
 
 
@@ -1310,8 +1488,45 @@ def test_save_failure_preservation_and_retry_flows(browser_page, seeded_playlist
         "() => document.querySelector('[data-testid=\"save-chip\"]')?.getAttribute('data-state') === 'saved'",
         timeout=5000,
     )
+
+    page.route(
+        "**/api/playlist",
+        lambda route: route.fulfill(
+            status=500,
+            content_type="application/json",
+            body=json.dumps({"detail": "disk full: " + ("X" * 3000)}),
+        )
+        if route.request.method == "POST"
+        else route.continue_(),
+    )
+    with runtime.allow_http_error("/api/playlist", 500):
+        page.get_by_test_id("reason-textarea").fill("Multi KB Toast Check")
+        page.get_by_test_id("reason-textarea").dispatch_event("change")
+        with page.expect_response(
+            lambda r: "/api/playlist" in r.url and r.request.method == "POST" and r.status == 500
+        ):
+            page.get_by_test_id("apply-trim-save-btn").click()
+        page.get_by_test_id("toast-notice").wait_for(state="visible", timeout=5000)
+        toast_box_1440 = page.get_by_test_id("toast-notice").bounding_box()
+        assert toast_box_1440 is not None and toast_box_1440["height"] <= 76, toast_box_1440
+        _assert_no_layout_overflow(page, required_testids=("toast-notice", "save-retry-btn", "apply-trim-save-btn"))
+
+        page.set_viewport_size({"width": 900, "height": 700})
+        page.wait_for_timeout(120)
+        toast_box_900 = page.get_by_test_id("toast-notice").bounding_box()
+        assert toast_box_900 is not None and toast_box_900["height"] <= 64, toast_box_900
+        _assert_no_layout_overflow(page, required_testids=("toast-notice", "save-retry-btn"))
+        page.unroute("**/api/playlist")
+    page.get_by_test_id("save-retry-btn").click()
+    page.wait_for_function(
+        "() => document.querySelector('[data-testid=\"save-chip\"]')?.getAttribute('data-state') === 'saved'",
+        timeout=5000,
+    )
+    page.set_viewport_size({"width": 1440, "height": 900})
+    page.wait_for_timeout(100)
+
     _reload_and_hydrate(page, has_songs=True)
-    assert page.get_by_test_id("reason-textarea").input_value() == "Pending Export Gate Copy"
+    assert page.get_by_test_id("reason-textarea").input_value() == "Multi KB Toast Check"
     _expect_exact(page.get_by_test_id("io-in-box").locator(".io-readout"), "0:01.1")
     _expect_exact(page.get_by_test_id("io-out-box").locator(".io-readout"), "0:04.9")
     persisted = json.loads((seeded_playlist / "playlist.json").read_text(encoding="utf-8"))
@@ -1524,17 +1739,31 @@ def test_multi_viewport_layout_and_long_log_operability(browser_page):
         "nothing in those days, nothingness was still there, samebeam page 1: "
         + "Unable to download API page: HTTPSConnectionPool(host='www.youtube.com', port=443): " * 5
     )
-    page.route(
-        "**/api/candidates*",
-        lambda route: route.fulfill(
+    cand_calls = []
+
+    def _empty_cands(route):
+        cand_calls.append(route.request.url)
+        route.fulfill(
             status=200,
             content_type="application/json",
             body=json.dumps({"status": "ok", "candidates": []}),
-        ),
-    )
+        )
+
+    page.route("**/api/candidates*", _empty_cands)
 
     _goto_studio(page, url)
     page.get_by_test_id("deck-title").wait_for(state="visible", timeout=5000)
+
+    page.get_by_test_id("rack-song-1").click()
+    page.get_by_test_id("tab-source").click()
+    page.wait_for_function(
+        "() => (document.querySelector('[data-testid=\"cand-bay\"]')?.innerText || '').includes('NO CANDIDATES FOUND')",
+        timeout=5000,
+    )
+    page.wait_for_timeout(500)
+    assert len(cand_calls) == 1, cand_calls
+    page.get_by_test_id("rack-song-0").click()
+    page.get_by_test_id("tab-trim").click()
 
     for w, h in VIEWPORTS:
         page.set_viewport_size({"width": w, "height": h})
@@ -1665,4 +1894,894 @@ def test_multi_viewport_layout_and_long_log_operability(browser_page):
             page.keyboard.press("Escape")
             page.get_by_test_id("modal-netease-import").wait_for(state="hidden", timeout=3000)
 
+    runtime.assert_clean()
+
+
+def test_bili_cancel_race_and_netease_audio_modal_toast(browser_page, monkeypatch):
+    page, url, runtime = browser_page
+    started = threading.Event()
+    gate = threading.Event()
+    qr_calls = {"n": 0}
+    poll_urls = []
+
+    def _mock_bili_status(*args, **kwargs):
+        return {"logged_in": False, "uname": "", "is_vip": False, "vip_label": ""}
+
+    def _mock_bili_qr():
+        qr_calls["n"] += 1
+        if qr_calls["n"] == 1:
+            started.set()
+            gate.wait(timeout=3.0)
+            return {"qrcode_key": "qr_race_1", "url": "https://example.invalid/qr1"}
+        return {"qrcode_key": "qr_race_2", "url": "https://example.invalid/qr2"}
+
+    monkeypatch.setattr(server, "get_bilibili_login_status", _mock_bili_status)
+    monkeypatch.setattr(server, "generate_bilibili_qr", _mock_bili_qr)
+    monkeypatch.setattr(
+        server,
+        "poll_bilibili_qr",
+        lambda *args, **kwargs: {"status": "waiting", "message": "waiting"},
+    )
+    page.on("request", lambda req: poll_urls.append(req.url) if "/api/bilibili/qr/poll" in req.url else None)
+
+    _goto_studio(page, url)
+    page.get_by_test_id("deck-title").wait_for(state="visible", timeout=5000)
+
+    page.get_by_test_id("batch-menu-btn").click()
+    menu = page.get_by_test_id("batch-menu-panel")
+    menu.get_by_role("button", name=re.compile(r"B站|Bilibili")).click()
+    page.get_by_test_id("modal-bili-auth").wait_for(state="visible", timeout=5000)
+    assert started.wait(timeout=3.0)
+    page.keyboard.press("Escape")
+    page.get_by_test_id("modal-bili-auth").wait_for(state="hidden", timeout=3000)
+    gate.set()
+    page.wait_for_timeout(2300)
+    assert poll_urls == [], poll_urls
+
+    page.get_by_test_id("batch-menu-btn").click()
+    menu.get_by_role("button", name=re.compile(r"B站|Bilibili")).click()
+    page.get_by_test_id("modal-bili-auth").locator(".qr-frame svg").wait_for(
+        state="visible", timeout=5000
+    )
+    page.get_by_test_id("modal-close-btn").click()
+    page.get_by_test_id("modal-bili-auth").wait_for(state="hidden", timeout=3000)
+
+    page.get_by_test_id("batch-menu-btn").click()
+    menu.get_by_role("button", name=re.compile(r"网易云音源|音源设置")).click()
+    audio_modal = page.get_by_test_id("modal-netease-audio")
+    audio_modal.wait_for(state="visible", timeout=5000)
+    api_url_input = audio_modal.locator("input[type='text']").first
+    quality_select = audio_modal.locator("select").first
+    script_textarea = audio_modal.locator("textarea").first
+    api_url_input.fill("https://unsaved-test.invalid/api")
+    quality_select.select_option("hires")
+    script_textarea.fill("unsaved script text")
+    audio_modal.get_by_role("button", name="关闭", exact=True).click()
+    audio_modal.wait_for(state="hidden", timeout=3000)
+
+    page.get_by_test_id("batch-menu-btn").click()
+    menu.get_by_role("button", name=re.compile(r"网易云音源|音源设置")).click()
+    audio_modal.wait_for(state="visible", timeout=5000)
+    assert api_url_input.input_value() == ""
+    assert quality_select.input_value() == "flac"
+    assert script_textarea.input_value() == ""
+
+    script_textarea.fill("invalid script without url or key")
+    with runtime.allow_http_error("/api/netease_audio/config", 400):
+        with page.expect_response(
+            lambda r: "/api/netease_audio/config" in r.url and r.request.method == "POST" and r.status == 400
+        ):
+            audio_modal.get_by_role("button", name="保存音源配置", exact=True).click()
+        toast = page.get_by_test_id("toast-notice")
+        toast.wait_for(state="visible", timeout=5000)
+        hit_check = page.evaluate(
+            """() => {
+              const t = document.querySelector('[data-testid="toast-notice"]');
+              const msg = t?.querySelector('.toast-msg');
+              const dismiss = t?.querySelector('button[aria-label="Dismiss"]');
+              const mr = msg?.getBoundingClientRect();
+              const dr = dismiss?.getBoundingClientRect();
+              const hitMsg = mr ? document.elementFromPoint(mr.left + mr.width / 2, mr.top + mr.height / 2) : null;
+              const hitDis = dr ? document.elementFromPoint(dr.left + dr.width / 2, dr.top + dr.height / 2) : null;
+              return {
+                msgInsideToast: Boolean(t && hitMsg && (t === hitMsg || t.contains(hitMsg))),
+                dismissInsideBtn: Boolean(dismiss && hitDis && (dismiss === hitDis || dismiss.contains(hitDis))),
+                hitMsgClass: hitMsg ? hitMsg.className : null,
+                hitDisClass: hitDis ? hitDis.className : null,
+              };
+            }"""
+        )
+        assert hit_check["msgInsideToast"], hit_check
+        assert hit_check["dismissInsideBtn"], hit_check
+        toast.locator('button[aria-label="Dismiss"]').click()
+        toast.wait_for(state="hidden", timeout=3000)
+        assert audio_modal.is_visible()
+
+    page.keyboard.press("Escape")
+    audio_modal.wait_for(state="hidden", timeout=3000)
+    runtime.assert_clean()
+
+
+def test_track_rack_drag_reorder_media_sync_and_poll_shrink(browser_page, seeded_playlist, monkeypatch):
+    page, url, runtime = browser_page
+    _seed_sync_lyrics_media(seeded_playlist)
+
+    orig_save = server.save_playlist
+
+    def _delayed_save(pl, *args, **kwargs):
+        time.sleep(0.25)
+        return orig_save(pl, *args, **kwargs)
+
+    monkeypatch.setattr(server, "save_playlist", _delayed_save)
+    media_responses = []
+    page.on(
+        "response",
+        lambda r: media_responses.append((r.url, r.status)) if "/api/media/" in r.url else None,
+    )
+
+    _goto_studio(page, url)
+    page.get_by_test_id("deck-title").wait_for(state="visible", timeout=5000)
+    page.wait_for_function(
+        "() => { const v = document.querySelector('[data-testid=\"monitor-video\"]'); return v && v.readyState >= 1 && v.duration >= 3.0; }",
+        timeout=6000,
+    )
+
+    page.route(
+        "**/api/playlist",
+        lambda route: route.fulfill(
+            status=500,
+            content_type="application/json",
+            body=json.dumps({"detail": "reorder save error"}),
+        )
+        if route.request.method == "POST"
+        else route.continue_(),
+    )
+    with runtime.allow_http_error("/api/playlist", 500):
+        with page.expect_response(
+            lambda r: "/api/playlist" in r.url and r.request.method == "POST" and r.status == 500
+        ):
+            page.get_by_test_id("rack-song-0").drag_to(page.get_by_test_id("rack-song-1"))
+        page.wait_for_function(
+            "() => document.querySelector('[data-testid=\"save-chip\"]')?.getAttribute('data-state') === 'error'",
+            timeout=5000,
+        )
+        assert page.get_by_test_id("save-retry-btn").is_visible()
+        assert media_responses and all(status < 400 for _, status in media_responses), media_responses
+        assert not any("/api/media/1" in u for u, _ in media_responses), media_responses
+        page.unroute("**/api/playlist")
+
+    with page.expect_response(
+        lambda r: "/api/playlist" in r.url and r.request.method == "POST" and r.status == 200
+    ):
+        page.get_by_test_id("save-retry-btn").click()
+    page.wait_for_function(
+        "() => document.querySelector('[data-testid=\"save-chip\"]')?.getAttribute('data-state') === 'saved'",
+        timeout=6000,
+    )
+    page.wait_for_function(
+        "() => { const v = document.querySelector('[data-testid=\"monitor-video\"]'); return v && v.readyState >= 1 && v.duration >= 3.0 && !v.error; }",
+        timeout=6000,
+    )
+    assert any("/api/media/1" in u and status in (200, 206) for u, status in media_responses), media_responses
+    _expect_contains(page.get_by_test_id("deck-title"), "Song A")
+    assert "active" in (page.get_by_test_id("rack-song-1").get_attribute("class") or "")
+
+    media_responses.clear()
+    with page.expect_response(
+        lambda r: "/api/playlist" in r.url and r.request.method == "POST" and r.status == 200
+    ):
+        page.get_by_test_id("rack-song-1").drag_to(page.get_by_test_id("rack-song-0"))
+    page.wait_for_function(
+        "() => document.querySelector('[data-testid=\"save-chip\"]')?.getAttribute('data-state') === 'saved'",
+        timeout=6000,
+    )
+    page.wait_for_function(
+        "() => { const v = document.querySelector('[data-testid=\"monitor-video\"]'); return v && v.readyState >= 1 && v.duration >= 3.0 && !v.error; }",
+        timeout=6000,
+    )
+    assert all(status < 400 for _, status in media_responses), media_responses
+
+    media_responses.clear()
+    with page.expect_response(
+        lambda r: "/api/playlist" in r.url and r.request.method == "POST" and r.status == 200
+    ):
+        page.get_by_test_id("rack-song-0").drag_to(page.get_by_test_id("rack-song-1"))
+    page.wait_for_function(
+        "() => document.querySelector('[data-testid=\"save-chip\"]')?.getAttribute('data-state') === 'saved'",
+        timeout=6000,
+    )
+    page.wait_for_function(
+        "() => { const v = document.querySelector('[data-testid=\"monitor-video\"]'); return v && v.readyState >= 1 && v.duration >= 3.0 && !v.error; }",
+        timeout=6000,
+    )
+    assert all(status < 400 for _, status in media_responses), media_responses
+    assert any("/api/media/1" in u and status in (200, 206) for u, status in media_responses), media_responses
+    _expect_contains(page.get_by_test_id("deck-title"), "Song A")
+    assert "active" in (page.get_by_test_id("rack-song-1").get_attribute("class") or "")
+
+    persisted = json.loads((seeded_playlist / "playlist.json").read_text(encoding="utf-8"))
+    assert [s["title"] for s in persisted["songs"]] == ["Song B", "Song A"]
+
+    _reload_and_hydrate(page, has_songs=True)
+    _expect_contains(page.get_by_test_id("rack-song-0"), "Song B")
+    _expect_contains(page.get_by_test_id("rack-song-1"), "Song A")
+
+    page.get_by_test_id("rack-song-1").click()
+    _expect_contains(page.get_by_test_id("deck-title"), "Song A")
+    poll_step = {"n": 0}
+
+    def _shrink_status(route):
+        poll_step["n"] += 1
+        busy = poll_step["n"] == 1
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps(
+                {
+                    "is_downloading": busy,
+                    "is_rendering": False,
+                    "queue_count": 0,
+                    "current_song": "Song B" if busy else "",
+                    "logs": [],
+                    "progress_percent": 50 if busy else 100,
+                }
+            ),
+        )
+
+    shrunk_pl = PlaylistConfig(
+        output_sequence_name="Shrunk",
+        songs=[persisted["songs"][0]],
+    ).model_dump()
+    page.route("**/api/status", _shrink_status)
+    page.route(
+        "**/api/playlist",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps(shrunk_pl),
+        )
+        if route.request.method == "GET"
+        else route.continue_(),
+    )
+    deadline = time.time() + 6.0
+    while poll_step["n"] < 2 and time.time() < deadline:
+        page.wait_for_timeout(150)
+    page.wait_for_function(
+        "() => document.querySelectorAll('[data-testid^=\"rack-song-\"]').length === 1",
+        timeout=5000,
+    )
+    page.get_by_test_id("deck-title").wait_for(state="visible", timeout=5000)
+    _expect_contains(page.get_by_test_id("deck-title"), "Song B")
+    page.unroute("**/api/playlist")
+    page.unroute("**/api/status")
+    runtime.assert_clean()
+
+
+def test_delete_song_media_cache_and_add_empty_reset(browser_page, seeded_playlist):
+    page, url, runtime = browser_page
+    _seed_sync_lyrics_media(seeded_playlist)
+    shutil.copyfile(FIXTURE_MEDIA_DIR / "color-video.mp4", seeded_playlist / "raw" / "song_b.mp4")
+    pl_path = seeded_playlist / "playlist.json"
+    pl = json.loads(pl_path.read_text(encoding="utf-8"))
+    pl["songs"][1]["file_path"] = "raw/song_b.mp4"
+    pl["songs"][1]["normalized_path"] = ""
+    pl["songs"][1]["end"] = "0:01.2"
+    save_playlist(pl, pl_path)
+
+    _goto_studio(page, url)
+    page.wait_for_function(
+        "() => { const v = document.querySelector('[data-testid=\"monitor-video\"]'); return v && v.readyState >= 1 && v.duration >= 4.0; }",
+        timeout=6000,
+    )
+
+    page.get_by_test_id("transport-play").click()
+    page.wait_for_function(
+        "() => { const v = document.querySelector('[data-testid=\"monitor-video\"]'); return v && !v.paused; }",
+        timeout=3000,
+    )
+    page.evaluate(
+        """(t) => {
+          const v = document.querySelector('[data-testid="monitor-video"]');
+          v.currentTime = t;
+          v.dispatchEvent(new Event('timeupdate'));
+        }""",
+        1.8,
+    )
+    page.wait_for_timeout(60)
+
+    page.get_by_test_id("add-track-btn").click()
+    page.wait_for_function(
+        "() => document.querySelectorAll('[data-testid^=\"rack-song-\"]').length === 3",
+        timeout=5000,
+    )
+    page.get_by_test_id("tab-trim").click()
+    _expect_contains(page.get_by_test_id("transport-play"), "Play")
+    assert page.locator(".monitor-playhead").inner_text() == "0:00.0"
+    assert page.locator(".monitor-duration").inner_text() == "/ —"
+
+    page.get_by_test_id("tab-stage").click()
+    page.once("dialog", lambda d: d.accept())
+    page.get_by_test_id("meta-delete-btn").click()
+    page.wait_for_function(
+        "() => document.querySelectorAll('[data-testid^=\"rack-song-\"]').length === 2",
+        timeout=5000,
+    )
+
+    page.get_by_test_id("rack-song-0").click()
+    page.get_by_test_id("tab-trim").click()
+    page.wait_for_function(
+        "() => { const v = document.querySelector('[data-testid=\"monitor-video\"]'); return v && v.readyState >= 1 && v.duration >= 4.0; }",
+        timeout=6000,
+    )
+    page.get_by_test_id("tab-stage").click()
+
+    page.once("dialog", lambda d: d.dismiss())
+    page.get_by_test_id("meta-delete-btn").click()
+    page.wait_for_timeout(150)
+    assert page.locator('[data-testid^="rack-song-"]').count() == 2
+
+    page.once("dialog", lambda d: d.accept())
+    with page.expect_response(
+        lambda r: "/api/playlist" in r.url and r.request.method == "POST" and r.status == 200
+    ):
+        page.get_by_test_id("meta-delete-btn").click()
+    page.wait_for_function(
+        "() => document.querySelectorAll('[data-testid^=\"rack-song-\"]').length === 1",
+        timeout=5000,
+    )
+
+    page.get_by_test_id("tab-trim").click()
+    _expect_contains(page.get_by_test_id("deck-title"), "Song B")
+    page.wait_for_function(
+        "() => { const v = document.querySelector('[data-testid=\"monitor-video\"]'); return v && v.readyState >= 1 && v.duration > 0.5 && v.duration < 2.0; }",
+        timeout=6000,
+    )
+
+    page.get_by_test_id("tab-stage").click()
+    page.once("dialog", lambda d: d.accept())
+    with page.expect_response(
+        lambda r: "/api/playlist" in r.url and r.request.method == "POST" and r.status == 200
+    ):
+        page.get_by_test_id("meta-delete-btn").click()
+    page.get_by_test_id("empty-state").wait_for(state="visible", timeout=5000)
+    after_last = json.loads(pl_path.read_text(encoding="utf-8"))
+    assert after_last["songs"] == []
+    runtime.assert_clean()
+
+
+def test_r6_delete_fail_edit_save_reloads_lyrics(browser_page, seeded_playlist):
+    page, url, runtime = browser_page
+    _seed_sync_lyrics_media(seeded_playlist)
+    shutil.copyfile(FIXTURE_MEDIA_DIR / "color-video.mp4", seeded_playlist / "raw" / "song_b.mp4")
+    shutil.copyfile(FIXTURE_MEDIA_DIR / "color-video.mp4", seeded_playlist / "raw" / "song_c.mp4")
+    (seeded_playlist / "lyrics" / "song_b.json").write_text(
+        json.dumps(
+            {
+                "lines": [
+                    {"time": 0.4, "orig": "Song B bilingual orig", "trans": "第二首双语翻译"},
+                ],
+                "has_translation": True,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (seeded_playlist / "lyrics" / "song_c.json").write_text(
+        json.dumps(
+            {
+                "lines": [
+                    {"time": 0.4, "orig": "Song C bilingual orig", "trans": "第三首双语翻译"},
+                ],
+                "has_translation": True,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    pl_path = seeded_playlist / "playlist.json"
+    pl = json.loads(pl_path.read_text(encoding="utf-8"))
+    pl["songs"][1]["file_path"] = "raw/song_b.mp4"
+    pl["songs"][1]["lyrics_path"] = "lyrics/song_b.json"
+    pl["songs"][1]["end"] = "0:01.2"
+    song_c = dict(pl["songs"][1])
+    song_c["title"] = "Song C"
+    song_c["artist"] = "Artist C"
+    song_c["netease_id"] = "1003"
+    song_c["file_path"] = "raw/song_c.mp4"
+    song_c["lyrics_path"] = "lyrics/song_c.json"
+    pl["songs"].append(song_c)
+    save_playlist(pl, pl_path)
+
+    _goto_studio(page, url)
+    page.get_by_test_id("deck-title").wait_for(state="visible", timeout=5000)
+    _expect_contains(page.get_by_test_id("deck-title"), "Song A")
+
+    page.get_by_test_id("tab-stage").click()
+    page.route(
+        "**/api/playlist",
+        lambda route: route.fulfill(
+            status=500,
+            content_type="application/json",
+            body=json.dumps({"detail": "delete save error"}),
+        )
+        if route.request.method == "POST"
+        else route.continue_(),
+    )
+    with runtime.allow_http_error("/api/playlist", 500):
+        page.once("dialog", lambda d: d.accept())
+        with page.expect_response(
+            lambda r: "/api/playlist" in r.url and r.request.method == "POST" and r.status == 500
+        ):
+            page.get_by_test_id("meta-delete-btn").click()
+        page.wait_for_function(
+            "() => document.querySelector('[data-testid=\"save-chip\"]')?.getAttribute('data-state') === 'error'",
+            timeout=5000,
+        )
+        _expect_contains(page.get_by_test_id("deck-title"), "Song B")
+        page.get_by_test_id("tab-trim").click()
+        _expect_contains(page.get_by_test_id("lyrics-panel"), "NO LYRICS LOADED")
+        page.get_by_test_id("reason-textarea").fill("Updated reason after failed delete")
+        page.wait_for_function(
+            "() => document.querySelector('[data-testid=\"save-chip\"]')?.getAttribute('data-state') === 'dirty'",
+            timeout=3000,
+        )
+        page.unroute("**/api/playlist")
+
+    with page.expect_response(
+        lambda r: "/api/playlist" in r.url and r.request.method == "POST" and r.status == 200
+    ):
+        with page.expect_response(
+            lambda r: "/api/lyrics/0" in r.url and r.request.method == "GET" and r.status == 200
+        ):
+            page.get_by_test_id("apply-trim-save-btn").click()
+
+    page.wait_for_function(
+        "() => document.querySelector('[data-testid=\"save-chip\"]')?.getAttribute('data-state') === 'saved'",
+        timeout=5000,
+    )
+    _expect_contains(page.get_by_test_id("lyrics-panel"), "Song B bilingual orig")
+    _expect_contains(page.get_by_test_id("lyrics-panel"), "第二首双语翻译")
+    assert "NO LYRICS LOADED" not in page.get_by_test_id("lyrics-panel").inner_text()
+    page.wait_for_function(
+        "() => { const v = document.querySelector('[data-testid=\"monitor-video\"]'); return v && v.readyState >= 1 && v.duration > 0.5 && v.duration < 2.0 && !v.error; }",
+        timeout=6000,
+    )
+
+    page.get_by_test_id("tab-stage").click()
+    page.route(
+        "**/api/playlist",
+        lambda route: route.fulfill(
+            status=500,
+            content_type="application/json",
+            body=json.dumps({"detail": "delete save error 2"}),
+        )
+        if route.request.method == "POST"
+        else route.continue_(),
+    )
+    with runtime.allow_http_error("/api/playlist", 500):
+        page.once("dialog", lambda d: d.accept())
+        with page.expect_response(
+            lambda r: "/api/playlist" in r.url and r.request.method == "POST" and r.status == 500
+        ):
+            page.get_by_test_id("meta-delete-btn").click()
+        page.wait_for_function(
+            "() => document.querySelector('[data-testid=\"save-chip\"]')?.getAttribute('data-state') === 'error'",
+            timeout=5000,
+        )
+        _expect_contains(page.get_by_test_id("deck-title"), "Song C")
+        page.get_by_test_id("tab-trim").click()
+        _expect_contains(page.get_by_test_id("lyrics-panel"), "NO LYRICS LOADED")
+        page.unroute("**/api/playlist")
+
+    with page.expect_response(
+        lambda r: "/api/playlist" in r.url and r.request.method == "POST" and r.status == 200
+    ):
+        with page.expect_response(
+            lambda r: "/api/lyrics/0" in r.url and r.request.method == "GET" and r.status == 200
+        ):
+            page.get_by_test_id("save-chip").click()
+
+    page.wait_for_function(
+        "() => document.querySelector('[data-testid=\"save-chip\"]')?.getAttribute('data-state') === 'saved'",
+        timeout=5000,
+    )
+    _expect_contains(page.get_by_test_id("lyrics-panel"), "Song C bilingual orig")
+    _expect_contains(page.get_by_test_id("lyrics-panel"), "第三首双语翻译")
+    persisted = json.loads(pl_path.read_text(encoding="utf-8"))
+    assert [s["title"] for s in persisted["songs"]] == ["Song C"]
+    runtime.assert_clean()
+
+
+def test_r6_reorder_fail_gates_upload_and_refetch_indices(browser_page, seeded_playlist, monkeypatch):
+    page, url, runtime = browser_page
+    _seed_sync_lyrics_media(seeded_playlist)
+    shutil.copyfile(FIXTURE_MEDIA_DIR / "color-video.mp4", seeded_playlist / "raw" / "song_b.mp4")
+    (seeded_playlist / "lyrics" / "song_b.json").write_text(
+        json.dumps(
+            {
+                "lines": [
+                    {"time": 0.4, "orig": "Song B lyric", "trans": "第二首译文"},
+                ],
+                "has_translation": True,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    pl_path = seeded_playlist / "playlist.json"
+    pl = json.loads(pl_path.read_text(encoding="utf-8"))
+    pl["songs"][1]["file_path"] = "raw/song_b.mp4"
+    pl["songs"][1]["lyrics_path"] = "lyrics/song_b.json"
+    pl["songs"][1]["end"] = "0:01.2"
+    save_playlist(pl, pl_path)
+
+    def _mock_fetch_lyrics(song, base_path, force=False, log=None):
+        target = base_path / "lyrics" / f"{song.title}.json"
+        target.write_text(
+            json.dumps(
+                {
+                    "lines": [
+                        {
+                            "time": 0.5,
+                            "orig": f"Refetched for {song.title}",
+                            "trans": f"译文 {song.title}",
+                        }
+                    ],
+                    "has_translation": True,
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        song.lyrics_path = f"lyrics/{song.title}.json"
+        return target
+
+    monkeypatch.setattr(server, "fetch_and_save_lyrics", _mock_fetch_lyrics)
+
+    _goto_studio(page, url)
+    page.get_by_test_id("deck-title").wait_for(state="visible", timeout=5000)
+    page.wait_for_function(
+        "() => { const v = document.querySelector('[data-testid=\"monitor-video\"]'); return v && v.readyState >= 1 && v.duration >= 4.0; }",
+        timeout=6000,
+    )
+
+    page.route(
+        "**/api/playlist",
+        lambda route: route.fulfill(
+            status=500,
+            content_type="application/json",
+            body=json.dumps({"detail": "reorder save blocked"}),
+        )
+        if route.request.method == "POST"
+        else route.continue_(),
+    )
+    upload_requests = []
+    req_order = []
+
+    def _track_req(req):
+        if req.method == "POST" and ("/api/playlist" in req.url or "/api/upload_media/" in req.url or "/api/lyrics/" in req.url):
+            req_order.append((req.method, req.url))
+        if "/api/upload_media/" in req.url:
+            upload_requests.append(req.url)
+
+    page.on("request", _track_req)
+
+    with runtime.allow_http_error("/api/playlist", 500):
+        with page.expect_response(
+            lambda r: "/api/playlist" in r.url and r.request.method == "POST" and r.status == 500
+        ):
+            page.get_by_test_id("rack-song-0").drag_to(page.get_by_test_id("rack-song-1"))
+        page.wait_for_function(
+            "() => document.querySelector('[data-testid=\"save-chip\"]')?.getAttribute('data-state') === 'error'",
+            timeout=5000,
+        )
+        _expect_contains(page.get_by_test_id("deck-title"), "Song A")
+        assert "active" in (page.get_by_test_id("rack-song-1").get_attribute("class") or "")
+
+        page.get_by_test_id("tab-source").click()
+        with page.expect_response(
+            lambda r: "/api/playlist" in r.url and r.request.method == "POST" and r.status == 500
+        ):
+            page.get_by_test_id("source-mode-local").click()
+        with page.expect_response(
+            lambda r: "/api/playlist" in r.url and r.request.method == "POST" and r.status == 500
+        ):
+            page.get_by_test_id("local-upload-input").set_input_files(
+                str(FIXTURE_MEDIA_DIR / "color-video.mp4")
+            )
+        page.wait_for_timeout(150)
+        assert upload_requests == []
+        assert page.get_by_test_id("save-chip").get_attribute("data-state") == "error"
+        assert page.get_by_test_id("save-retry-btn").is_visible()
+        page.unroute("**/api/playlist")
+
+    req_order.clear()
+    with page.expect_response(
+        lambda r: "/api/playlist" in r.url and r.request.method == "POST" and r.status == 200
+    ):
+        with page.expect_response(
+            lambda r: "/api/upload_media/1" in r.url and r.request.method == "POST" and r.status == 200
+        ):
+            page.get_by_test_id("local-upload-input").set_input_files(
+                str(FIXTURE_MEDIA_DIR / "color-video.mp4")
+            )
+
+    page.wait_for_function(
+        "() => document.querySelector('[data-testid=\"save-chip\"]')?.getAttribute('data-state') === 'saved'",
+        timeout=6000,
+    )
+    post_paths = [u for _, u in req_order]
+    pl_pos = next(i for i, u in enumerate(post_paths) if "/api/playlist" in u)
+    up_pos = next(i for i, u in enumerate(post_paths) if "/api/upload_media/1" in u)
+    assert pl_pos < up_pos, post_paths
+    assert (seeded_playlist / "raw" / "Artist_A_Song_A_local.mp4").is_file()
+    assert not (seeded_playlist / "raw" / "Artist_B_Song_B_local.mp4").exists()
+
+    persisted = json.loads(pl_path.read_text(encoding="utf-8"))
+    assert [s["title"] for s in persisted["songs"]] == ["Song B", "Song A"]
+    assert persisted["songs"][0]["file_path"] == "raw/song_b.mp4"
+    assert persisted["songs"][1]["file_path"] == "raw/Artist_A_Song_A_local.mp4"
+
+    page.route(
+        "**/api/playlist",
+        lambda route: route.fulfill(
+            status=500,
+            content_type="application/json",
+            body=json.dumps({"detail": "reorder save blocked 2"}),
+        )
+        if route.request.method == "POST"
+        else route.continue_(),
+    )
+    with runtime.allow_http_error("/api/playlist", 500):
+        with page.expect_response(
+            lambda r: "/api/playlist" in r.url and r.request.method == "POST" and r.status == 500
+        ):
+            page.get_by_test_id("rack-song-1").drag_to(page.get_by_test_id("rack-song-0"))
+        page.wait_for_function(
+            "() => document.querySelector('[data-testid=\"save-chip\"]')?.getAttribute('data-state') === 'error'",
+            timeout=5000,
+        )
+        _expect_contains(page.get_by_test_id("deck-title"), "Song A")
+        assert "active" in (page.get_by_test_id("rack-song-0").get_attribute("class") or "")
+        page.unroute("**/api/playlist")
+
+    req_order.clear()
+    page.get_by_test_id("tab-trim").click()
+    with page.expect_response(
+        lambda r: "/api/playlist" in r.url and r.request.method == "POST" and r.status == 200
+    ):
+        with page.expect_response(
+            lambda r: "/api/lyrics/0" in r.url and r.request.method == "POST" and r.status == 200
+        ):
+            page.get_by_test_id("lyrics-fetch-btn").click()
+
+    page.wait_for_function(
+        "() => document.querySelector('[data-testid=\"save-chip\"]')?.getAttribute('data-state') === 'saved'",
+        timeout=6000,
+    )
+    refetch_paths = [u for _, u in req_order]
+    pl_pos2 = next(i for i, u in enumerate(refetch_paths) if "/api/playlist" in u)
+    ly_pos2 = next(i for i, u in enumerate(refetch_paths) if "/api/lyrics/0" in u)
+    assert pl_pos2 < ly_pos2, refetch_paths
+    _expect_contains(page.get_by_test_id("lyrics-panel"), "Refetched for Song A")
+    persisted_final = json.loads(pl_path.read_text(encoding="utf-8"))
+    assert [s["title"] for s in persisted_final["songs"]] == ["Song A", "Song B"]
+    runtime.assert_clean()
+
+
+def test_r6_add_empty_fail_gates_upload_and_refetch(browser_page, seeded_playlist, monkeypatch):
+    page, url, runtime = browser_page
+    _seed_sync_lyrics_media(seeded_playlist)
+    pl_path = seeded_playlist / "playlist.json"
+    pl = json.loads(pl_path.read_text(encoding="utf-8"))
+    pl["songs"] = [pl["songs"][0]]
+    save_playlist(pl, pl_path)
+
+    def _mock_fetch_lyrics(song, base_path, force=False, log=None):
+        target = base_path / "lyrics" / f"fetched_{len(list((base_path / 'lyrics').glob('*.json')))}.json"
+        target.write_text(
+            json.dumps(
+                {
+                    "lines": [
+                        {
+                            "time": 0.5,
+                            "orig": f"Refetched for {song.title}",
+                            "trans": f"译文 {song.title}",
+                        }
+                    ],
+                    "has_translation": True,
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        song.lyrics_path = f"lyrics/{target.name}"
+        return target
+
+    monkeypatch.setattr(server, "fetch_and_save_lyrics", _mock_fetch_lyrics)
+
+    _goto_studio(page, url)
+    page.get_by_test_id("deck-title").wait_for(state="visible", timeout=5000)
+
+    upload_requests = []
+    lyrics_post_requests = []
+    req_order = []
+
+    def _track_req(req):
+        if req.method == "POST" and ("/api/playlist" in req.url or "/api/upload_media/" in req.url or "/api/lyrics/" in req.url):
+            req_order.append((req.method, req.url))
+        if req.method == "POST" and "/api/upload_media/" in req.url:
+            upload_requests.append(req.url)
+        if req.method == "POST" and "/api/lyrics/" in req.url:
+            lyrics_post_requests.append(req.url)
+
+    page.on("request", _track_req)
+
+    page.route(
+        "**/api/playlist",
+        lambda route: route.fulfill(
+            status=500,
+            content_type="application/json",
+            body=json.dumps({"detail": "add song save blocked"}),
+        )
+        if route.request.method == "POST"
+        else route.continue_(),
+    )
+    with runtime.allow_http_error("/api/playlist", 500):
+        with page.expect_response(
+            lambda r: "/api/playlist" in r.url and r.request.method == "POST" and r.status == 500
+        ):
+            page.get_by_test_id("add-track-btn").click()
+        page.wait_for_function(
+            "() => document.querySelector('[data-testid=\"save-chip\"]')?.getAttribute('data-state') === 'error'",
+            timeout=5000,
+        )
+        assert "active" in (page.get_by_test_id("rack-song-1").get_attribute("class") or "")
+
+        page.get_by_test_id("tab-source").click()
+        with page.expect_response(
+            lambda r: "/api/playlist" in r.url and r.request.method == "POST" and r.status == 500
+        ):
+            page.get_by_test_id("source-mode-local").click()
+        with page.expect_response(
+            lambda r: "/api/playlist" in r.url and r.request.method == "POST" and r.status == 500
+        ):
+            page.get_by_test_id("local-upload-input").set_input_files(
+                str(FIXTURE_MEDIA_DIR / "color-video.mp4")
+            )
+        page.wait_for_timeout(150)
+        assert upload_requests == []
+        assert page.get_by_test_id("save-chip").get_attribute("data-state") == "error"
+        assert page.get_by_test_id("save-retry-btn").is_visible()
+        page.unroute("**/api/playlist")
+
+    req_order.clear()
+    with page.expect_response(
+        lambda r: "/api/playlist" in r.url and r.request.method == "POST" and r.status == 200
+    ):
+        with page.expect_response(
+            lambda r: "/api/upload_media/1" in r.url and r.request.method == "POST" and r.status == 200
+        ):
+            page.get_by_test_id("local-upload-input").set_input_files(
+                str(FIXTURE_MEDIA_DIR / "color-video.mp4")
+            )
+
+    page.wait_for_function(
+        "() => document.querySelector('[data-testid=\"save-chip\"]')?.getAttribute('data-state') === 'saved'",
+        timeout=6000,
+    )
+    post_paths = [u for _, u in req_order]
+    pl_pos = next(i for i, u in enumerate(post_paths) if "/api/playlist" in u)
+    up_pos = next(i for i, u in enumerate(post_paths) if "/api/upload_media/1" in u)
+    assert pl_pos < up_pos, post_paths
+
+    persisted = json.loads(pl_path.read_text(encoding="utf-8"))
+    assert [s["title"] for s in persisted["songs"]] == ["Song A", "未命名曲目"]
+    uploaded_rel = persisted["songs"][1]["file_path"]
+    assert uploaded_rel.startswith("raw/") and uploaded_rel.endswith("_local.mp4")
+    assert (seeded_playlist / uploaded_rel).is_file()
+
+    page.route(
+        "**/api/playlist",
+        lambda route: route.fulfill(
+            status=500,
+            content_type="application/json",
+            body=json.dumps({"detail": "add song save blocked 2"}),
+        )
+        if route.request.method == "POST"
+        else route.continue_(),
+    )
+    with runtime.allow_http_error("/api/playlist", 500):
+        with page.expect_response(
+            lambda r: "/api/playlist" in r.url and r.request.method == "POST" and r.status == 500
+        ):
+            page.get_by_test_id("add-track-btn").click()
+        page.wait_for_function(
+            "() => document.querySelector('[data-testid=\"save-chip\"]')?.getAttribute('data-state') === 'error'",
+            timeout=5000,
+        )
+        assert "active" in (page.get_by_test_id("rack-song-2").get_attribute("class") or "")
+
+        page.get_by_test_id("tab-trim").click()
+        with page.expect_response(
+            lambda r: "/api/playlist" in r.url and r.request.method == "POST" and r.status == 500
+        ):
+            page.get_by_test_id("lyrics-fetch-btn").click()
+        page.wait_for_timeout(150)
+        assert lyrics_post_requests == []
+        assert page.get_by_test_id("save-chip").get_attribute("data-state") == "error"
+        assert page.get_by_test_id("save-retry-btn").is_visible()
+        page.unroute("**/api/playlist")
+
+    req_order.clear()
+    with page.expect_response(
+        lambda r: "/api/playlist" in r.url and r.request.method == "POST" and r.status == 200
+    ):
+        with page.expect_response(
+            lambda r: "/api/lyrics/2" in r.url and r.request.method == "POST" and r.status == 200
+        ):
+            page.get_by_test_id("lyrics-fetch-btn").click()
+
+    page.wait_for_function(
+        "() => document.querySelector('[data-testid=\"save-chip\"]')?.getAttribute('data-state') === 'saved'",
+        timeout=6000,
+    )
+    refetch_paths = [u for _, u in req_order]
+    pl_pos2 = next(i for i, u in enumerate(refetch_paths) if "/api/playlist" in u)
+    ly_pos2 = next(i for i, u in enumerate(refetch_paths) if "/api/lyrics/2" in u)
+    assert pl_pos2 < ly_pos2, refetch_paths
+    _expect_contains(page.get_by_test_id("lyrics-panel"), "Refetched for 未命名曲目")
+    persisted_final = json.loads(pl_path.read_text(encoding="utf-8"))
+    assert [s["title"] for s in persisted_final["songs"]] == ["Song A", "未命名曲目", "未命名曲目"]
+    runtime.assert_clean()
+
+
+def test_sequence_editor_column_can_be_resized(browser_page):
+    page, url, runtime = browser_page
+    page.goto(url)
+    page.get_by_role("button", name="Sequence Edit").click()
+    divider = page.get_by_role("separator", name="调整全片编辑右栏宽度")
+    divider.wait_for()
+    inspector = page.locator(".full-inspector")
+    initial = inspector.bounding_box()["width"]
+    bounds = divider.bounding_box()
+    x = bounds["x"] + bounds["width"] / 2
+    y = bounds["y"] + bounds["height"] / 2
+    page.mouse.move(x, y)
+    page.mouse.down()
+    page.mouse.move(x - 64, y, steps=4)
+    page.mouse.up()
+    assert inspector.bounding_box()["width"] == pytest.approx(initial + 64, abs=1)
+    page.reload()
+    page.get_by_role("button", name="Sequence Edit").click()
+    divider.wait_for()
+    assert inspector.bounding_box()["width"] == pytest.approx(initial + 64, abs=1)
+    divider.dblclick()
+    assert inspector.bounding_box()["width"] == pytest.approx(initial, abs=1)
+    page.set_viewport_size({"width": 1024, "height": 768})
+    assert divider.is_hidden()
+    runtime.assert_clean()
+
+
+def test_sequence_editor_edits_copy_for_rack_selection(browser_page):
+    page, url, runtime = browser_page
+    page.goto(url)
+    page.get_by_role("button", name="Sequence Edit").click()
+    page.get_by_test_id("rack-song-0").click()
+    editor = page.locator(".sequence-monitor").get_by_test_id("reason-textarea")
+    editor.wait_for()
+    assert page.get_by_role("group", name="Sequence clips").count() == 0
+    editor.fill("Sequence editor recommendation")
+    page.get_by_test_id("apply-trim-save-btn").click()
+    page.wait_for_function(
+        "() => document.querySelector('[data-testid=save-chip]').dataset.state === 'saved'"
+    )
+    page.get_by_test_id("rack-song-1").click()
+    assert editor.input_value() != "Sequence editor recommendation"
+    page.get_by_test_id("rack-intro").click()
+    assert editor.count() == 0
+    page.reload()
+    page.get_by_role("button", name="Sequence Edit").click()
+    page.get_by_test_id("rack-song-0").click()
+    assert editor.input_value() == "Sequence editor recommendation"
     runtime.assert_clean()

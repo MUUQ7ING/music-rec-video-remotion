@@ -1,32 +1,31 @@
+import { isPublicDemo } from '../api/publicDemo';
+import { ReasonPanel } from './ReasonPanel';
+import { ColumnDivider } from './ColumnDivider';
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Player, type PlayerRef } from '@remotion/player';
 import { SequenceMix, type MixReading } from './SequenceMix';
 import { AudioMeter } from './ui/Hardware';
-import { TRANSITION_OPTIONS } from '../types/studio';
-import { fmtSec } from '../utils/time';
+import { fmtSec, parseSec } from '../utils/time';
 import { expandPlaylistSegments } from '../../../remotion/src/utils/segments';
 import type { PlaylistConfig } from '../../../remotion/src/types';
 import { useStudioStore } from '../state/useStudioStore';
 import { IntroGlobalView } from '../views/IntroGlobalView';
 import { StageFxView } from '../views/StageFxView';
 import { TactileButton } from './ui/TactileButton';
-import { SafeImage } from './ui/SafeImage';
 import { Bay } from './ui/Bay';
 
-export default function TrackCompositionPreview({ full = false, transportRef, onPlaybackChange }: {
+export default function TrackCompositionPreview({ full = false, transportRef, onPlaybackChange, onSourceTimeChange }: {
   full?: boolean;
   transportRef?: RefObject<PlayerRef | null>;
   onPlaybackChange?: (playing: boolean) => void;
+  onSourceTimeChange?: (seconds: number) => void;
 }) {
-  const { playlist, activeSong, activeClip, activeClipIdx, activeIdx, activeView, selectSong, trimLoopPlaying, updateActiveSongField, saveMeta } = useStudioStore();
+  const { playlist, activeSong, activeClip, activeClipIdx, activeClips, activeIdx, activeView, switchTrimClip, trimLoopPlaying, setClipReasonTiming } = useStudioStore();
   const localPlayer = useRef<PlayerRef>(null);
   const player = transportRef ?? localPlayer;
-  const pendingSegment = useRef<{ song: number; frame: number } | null>(null);
   const [position, setPosition] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [mix, setMix] = useState<MixReading | null>(null);
-  const [transition, setTransition] = useState<number | null>(null);
-  const [selected, setSelected] = useState(-1);
   const inputProps = useMemo(() => {
     const composition: PlaylistConfig = {
       ...playlist,
@@ -55,20 +54,14 @@ export default function TrackCompositionPreview({ full = false, transportRef, on
     });
   }, [inputProps, fps]);
   const frames = segments.at(-1)?.next ?? 0;
-  const songStart = segments.find(segment => segment.songIndex === activeIdx)?.start;
-  const songStartRef = useRef(songStart);
-  songStartRef.current = songStart;
+  const selectedSegmentIndex = segments.findIndex(segment => segment.songIndex === activeIdx && segment.clipIndex === activeClipIdx);
+  const chosen = segments[selectedSegmentIndex];
+  const selectedStart = useRef(chosen?.start);
+  selectedStart.current = chosen?.start;
   useEffect(() => {
     if (!full) return;
-    if (pendingSegment.current && activeView === 'song' && pendingSegment.current.song === activeIdx) {
-      player.current?.seekTo(pendingSegment.current.frame);
-      pendingSegment.current = null;
-      return;
-    }
-    player.current?.seekTo(activeView === 'intro' ? 0 : songStartRef.current ?? 0);
-    setSelected(-1);
-    setTransition(null);
-  }, [full, activeIdx, activeView, player]);
+    player.current?.seekTo(activeView === 'intro' ? 0 : selectedStart.current ?? 0);
+  }, [full, activeIdx, activeClipIdx, activeView, player]);
   useEffect(() => {
     const instance = player.current;
     if (!instance || !onPlaybackChange) return;
@@ -84,6 +77,21 @@ export default function TrackCompositionPreview({ full = false, transportRef, on
       instance.removeEventListener('ended', pause);
     };
   }, [player, onPlaybackChange, activeIdx, activeClipIdx, activeSong?.has_file, activeSong?.has_normalized, activeSong?.has_audio]);
+
+  const sourceStart = parseSec(activeClip?.start);
+  useEffect(() => {
+    const instance = player.current;
+    if (!instance || !onSourceTimeChange) return;
+    const sync = () => onSourceTimeChange(sourceStart + instance.getCurrentFrame() / fps);
+    sync();
+    instance.addEventListener('timeupdate', sync);
+    instance.addEventListener('seeked', sync);
+    return () => {
+      instance.removeEventListener('timeupdate', sync);
+      instance.removeEventListener('seeked', sync);
+    };
+  }, [player, onSourceTimeChange, sourceStart, fps, activeIdx, activeClipIdx,
+    activeSong?.has_file, activeSong?.has_normalized, activeSong?.has_audio]);
 
   useEffect(() => {
     const instance = player.current;
@@ -106,30 +114,12 @@ export default function TrackCompositionPreview({ full = false, transportRef, on
     };
   }, [full, player]);
 
-  const jumpTo = (index: number, boundary: boolean) => {
-    const segment = segments[index];
-    if (!segment) return;
-    setSelected(index);
-    setTransition(boundary ? index : null);
-    const frame = boundary ? Math.max(0, segment.start - Math.round(fps / 2)) : segment.start;
-    if (segment.songIndex !== activeIdx || activeView !== 'song') {
-      pendingSegment.current = { song: segment.songIndex, frame };
-      selectSong(segment.songIndex);
-    } else {
-      player.current?.seekTo(frame);
-    }
-  };
-
-  const chosen = segments[selected] ?? segments.find(segment => segment.songIndex === activeIdx);
-  const incoming = transition === null ? undefined : segments[transition];
-  const outgoing = transition === null ? undefined : segments[transition - 1];
-
   const width = playlist.resolution?.width || 1920;
   const height = playlist.resolution?.height || 1080;
 
   const preview = (
     <Bay title={full ? "Sequence Preview" : "FX Preview"}>
-      {full || activeSong?.has_file || activeSong?.has_normalized || activeSong?.has_audio ? (
+      {full || (isPublicDemo && activeSong?.cover_url) || activeSong?.has_file || activeSong?.has_normalized || activeSong?.has_audio ? (
         <Player
           ref={player}
           key={full ? "full" : `${activeIdx}-${activeClipIdx}`}
@@ -163,57 +153,55 @@ export default function TrackCompositionPreview({ full = false, transportRef, on
             <span>{mix ? (mix.clip ? 'CLIP · dBFS' : 'Mix · dBFS') : 'Mix meter unavailable'}</span>
           </div>
         </div>
-        <Bay title="Sequence Tape">
+        <Bay title="Sequence Tape" right={
+          <div className="sequence-transport">
+            <TactileButton variant="dark" onClick={event => player.current?.toggle(event)}>{playing ? 'Pause' : 'Play'}</TactileButton>
+            {activeView === 'song' && chosen && selectedSegmentIndex > 0 && (
+              <TactileButton onClick={() => player.current?.seekTo(Math.max(0, chosen.start - Math.round(fps / 2)))}>
+                Preview Transition
+              </TactileButton>
+            )}
+          </div>
+        }>
           <div className="sequence-tape-track">
             <div className="sequence-tape-progress" style={{ width: `${Math.min(100, position / Math.max(1, frames - 1) * 100)}%` }} />
             <input className="sequence-scrub" type="range" aria-label="Sequence playhead" min={0} max={Math.max(0, frames - 1)} value={Math.min(position, Math.max(0, frames - 1))} onChange={event => player.current?.seekTo(Number(event.target.value))} />
           </div>
-          <div className="full-timeline" role="group" aria-label="Sequence clips">
-            {segments.map((segment, index) => (
-              <div className="sequence-segment" key={index}>
-                {index > 0 && <TactileButton size="xs" aria-label={`Transition into ${segment.song.title}`} aria-pressed={transition === index} onClick={() => jumpTo(index, true)}>⇄</TactileButton>}
-                <TactileButton
-                  className="sequence-cover-key"
-                  aria-label={`${segment.song.title} · Clip ${segment.clipIndex + 1}`}
-                  title={`${fmtSec(segment.start / fps)} · ${segment.song.title}`}
-                  aria-pressed={selected === index && transition === null}
-                  onClick={() => jumpTo(index, false)}
-                >
-                  <SafeImage
-                    src={segment.song.cover_path ? `/api/composition-media/${segment.song.cover_path}` : segment.song.cover_url || ''}
-                    alt=""
-                    fallback={<span className="sequence-cover-blank" aria-hidden="true" />}
-                  />
-                </TactileButton>
-              </div>
-            ))}
-          </div>
-          <TactileButton variant="dark" onClick={event => player.current?.toggle(event)}>{playing ? 'Pause' : 'Play'}</TactileButton>
         </Bay>
+        {activeView === 'song' && chosen && (
+          <ReasonPanel
+            onStamp={index => {
+              const current = player.current?.getCurrentFrame() ?? chosen.start;
+              const clipFrame = Math.max(0, Math.min(chosen.durationFrames - 1, current - chosen.start));
+              setClipReasonTiming(index, Math.round(clipFrame / fps * 10) / 10);
+            }}
+          />
+        )}
       </div>
-      <div className="full-inspector song-inspector">
-        {activeView === 'intro' ? <IntroGlobalView /> : incoming && outgoing ? (
-          <Bay title="Transition">
-            <p>{outgoing.song.title} → {incoming.song.title}</p>
-            <p>{outgoing.transitionAfterStyle !== 'none' ? outgoing.transitionAfterStyle : outgoing.overlayAfterStyle} · {((outgoing.transitionAfterFrames || outgoing.overlayAfterFrames) / fps).toFixed(2)} s</p>
-            {outgoing.songIndex === incoming.songIndex ? <p>Cross-dissolve between clips</p> : (
-              <>
-                <select className="te-select" aria-label="Transition style" value={activeSong?.transition_style || 'inherit'} onChange={event => updateActiveSongField('transition_style', event.target.value)}>
-                  <option value="inherit">Use sequence default</option>
-                  {TRANSITION_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+      <div className="full-inspector">
+        <ColumnDivider side="sequence" />
+        <div className="song-inspector">
+          {activeView === 'intro' ? <IntroGlobalView /> : <>
+            {chosen && <Bay title="Selected Clip">
+              <strong>{chosen.song.title}</strong>
+              {activeClips.length > 1 && (
+                <select
+                  className="te-select"
+                  aria-label="Selected clip"
+                  value={activeClipIdx}
+                  onChange={event => switchTrimClip(Number(event.target.value))}
+                >
+                  {activeClips.map((clip, index) => (
+                    <option key={index} value={index}>Clip {index + 1} · {clip.start}–{clip.end}</option>
+                  ))}
                 </select>
-                <TactileButton onClick={() => saveMeta()}>Save Changes</TactileButton>
-              </>
-            )}
-          </Bay>
-        ) : <>
-          {chosen && <Bay title="Selected Clip">
-            <strong>{chosen.song.title}</strong>
-            <p>Sequence {fmtSec(chosen.start / fps)}–{fmtSec((chosen.start + chosen.durationFrames) / fps)}</p>
-            <p>Source {chosen.clip.start}–{chosen.clip.end}</p>
-          </Bay>}
-          <StageFxView embedded />
-        </>}
+              )}
+              <p>Sequence {fmtSec(chosen.start / fps)}–{fmtSec((chosen.start + chosen.durationFrames) / fps)}</p>
+              <p>Source {chosen.clip.start}–{chosen.clip.end}</p>
+            </Bay>}
+            <StageFxView embedded />
+          </>}
+        </div>
       </div>
     </div>
   );

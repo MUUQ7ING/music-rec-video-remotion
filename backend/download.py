@@ -32,6 +32,7 @@ os.makedirs(RAW_DIR, exist_ok=True)
 
 # Cache the first working browser for Bilibili cookies during this process
 _CACHED_BILI_BROWSER: str | None = None
+YOUTUBE_COOKIES_FILENAME = "youtube_cookies.txt"
 _BILI_COOKIE_CANDIDATE_FILES = ("cookies.txt", "bilibili_cookies.txt")
 _BILI_DEFAULT_BROWSERS = ("edge", "chrome", "firefox")
 
@@ -127,7 +128,6 @@ def search_youtube(query: str) -> str | None:
         "quiet": True,
         "no_warnings": True,
         "extract_flat": True,
-        "remote_components": ["ejs:github"],
     }
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(f"ytsearch1:{query}", download=False)
@@ -265,7 +265,14 @@ def download_mv(
         opts["js_runtimes"] = {"node": {"path": node_path}}
 
     if not is_bilibili_url(url):
-        resolved_yt_cookie = _find_local_cookie_file(cookies_file)
+        resolved_yt_cookie = next((
+            candidate for candidate in (
+                cookies_file,
+                os.path.join(BASE_DIR, YOUTUBE_COOKIES_FILENAME),
+                os.path.join(BASE_DIR, "cookies.txt"),
+            )
+            if candidate and os.path.isfile(candidate)
+        ), None)
         if resolved_yt_cookie:
             log(f"[YouTube] 使用本地 Cookie 文件: {os.path.basename(resolved_yt_cookie)}")
             opts["cookiefile"] = resolved_yt_cookie
@@ -279,8 +286,7 @@ def download_mv(
             if "sign in to confirm" in err_lower or "not a bot" in err_lower:
                 log(
                     "[YouTube] 当前网络 IP 触发了 YouTube 人机验证。"
-                    "请在浏览器用扩展（如 Get cookies.txt LOCALLY）导出 YouTube 的 cookies.txt "
-                    "放到项目根目录，然后重新点击下载即可（macOS 后台不建议直接读 Chrome 钥匙串，以免弹窗卡住）。"
+                    "如已在浏览器登录，可通过 Batch 导入 YouTube cookies.txt 后重试。"
                 )
             raise
 

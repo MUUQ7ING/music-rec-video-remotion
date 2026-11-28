@@ -1,3 +1,5 @@
+import { isPublicDemo } from '../api/publicDemo';
+import { ProjectSelector } from './ProjectSelector';
 import { useEffect, useRef, useState } from 'react';
 import { PixelIcon } from './ui/PixelIcon';
 import { useStudioStore } from '../state/useStudioStore';
@@ -70,8 +72,10 @@ export function Topbar({ fullEdit, onToggleFullEdit }: { fullEdit: boolean; onTo
       <div className="topbar-left">
         <div className="brand-plate" data-testid="brand-plate">
           <span className="brand-name">MRV<span>–</span>02</span>
-          <span className="brand-caption">Music Video Workstation</span>
+          <span className="brand-caption">{isPublicDemo ? 'Workstation · Online Demo' : 'Music Video Workstation'}</span>
         </div>
+
+        {!isPublicDemo && <ProjectSelector />}
 
         <input
           type="text"
@@ -89,7 +93,7 @@ export function Topbar({ fullEdit, onToggleFullEdit }: { fullEdit: boolean; onTo
           placeholder="输出序列名称"
         />
 
-        <button
+        <TactileButton customLayout
           type="button"
           className={chipClasses.join(' ')}
           data-testid="save-chip"
@@ -99,7 +103,7 @@ export function Topbar({ fullEdit, onToggleFullEdit }: { fullEdit: boolean; onTo
         >
           <span className={`te-led ${ledTone}`} />
           <span>{chipLabel}</span>
-        </button>
+        </TactileButton>
 
         <span className="spec-pill" data-testid="spec-pill">
           {songs.length} TRK · {totalDurationStr} · {height}P/{fps}FPS
@@ -118,19 +122,21 @@ export function Topbar({ fullEdit, onToggleFullEdit }: { fullEdit: boolean; onTo
           <PixelIcon name={theme === 'light' ? 'moon' : 'sun'} />
         </TactileButton>
 
-        <div className="tools-wrap">
-          <TactileButton
-            variant="default"
-            active={showTools}
-            led={authReady ? 'green' : 'amber'}
-            data-testid="batch-menu-btn"
-            onClick={() => setShowTools((prev) => !prev)}
-          >
-            <span>≡ BATCH</span>
-            {status.queue_count > 0 ? <span className="mono">Q:{status.queue_count}</span> : null}
-          </TactileButton>
-          <BatchDrawer />
-        </div>
+        {!isPublicDemo && (
+          <div className="tools-wrap">
+            <TactileButton
+              variant="default"
+              active={showTools}
+              led={authReady ? 'green' : 'amber'}
+              data-testid="batch-menu-btn"
+              onClick={() => setShowTools((prev) => !prev)}
+            >
+              <span>≡ BATCH</span>
+              {status.queue_count > 0 ? <span className="mono">Q:{status.queue_count}</span> : null}
+            </TactileButton>
+            <BatchDrawer />
+          </div>
+        )}
 
         <span className="topbar-sep" />
         <TactileButton active={fullEdit} aria-pressed={fullEdit} onClick={onToggleFullEdit}>
@@ -140,7 +146,8 @@ export function Topbar({ fullEdit, onToggleFullEdit }: { fullEdit: boolean; onTo
         <TactileButton
           variant="dark"
           data-testid="studio-btn"
-          disabled={openingStudio || isSaving}
+          disabled={isPublicDemo || openingStudio || isSaving}
+          title={isPublicDemo ? 'Requires the local MRV-02 server' : undefined}
           onClick={async () => {
             const url = await openRemotionStudio();
             if (url) setStudioUrl(url);
@@ -153,7 +160,8 @@ export function Topbar({ fullEdit, onToggleFullEdit }: { fullEdit: boolean; onTo
           <TactileButton
             variant="accent"
             data-testid="export-btn"
-            disabled={status.is_downloading || isSaving}
+            disabled={isPublicDemo || status.is_downloading || isSaving}
+            title={isPublicDemo ? 'Requires the local MRV-02 server' : undefined}
             onClick={() => renderRemotionVideo()}
           >
             <PixelIcon name="export" /> Export MP4

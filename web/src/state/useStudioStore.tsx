@@ -138,16 +138,62 @@ function getEffectiveSourceMode(song: SongItem | null): EffectiveSourceMode {
   return 'video_url';
 }
 
-function matchServerSong(localSong: SongItem, idx: number, serverSongs: SongItem[]): SongItem | null {
-  if (localSong.netease_id) {
-    const byId = serverSongs.find((s) => s.netease_id && s.netease_id === localSong.netease_id);
-    if (byId) return byId;
+function matchSongsByPriority(
+  sourceSongs: SongItem[],
+  targetSongs: SongItem[],
+): Array<SongItem | null> {
+  const matches: Array<SongItem | null> = new Array(sourceSongs.length).fill(null);
+  const used = new Set<SongItem>();
+
+  for (let idx = 0; idx < sourceSongs.length; idx++) {
+    const src = sourceSongs[idx];
+    if (!src.netease_id) continue;
+    const byId = targetSongs.find(
+      (s) => !used.has(s) && s.netease_id && s.netease_id === src.netease_id,
+    );
+    if (byId) {
+      matches[idx] = byId;
+      used.add(byId);
+    }
   }
-  const byTitle = serverSongs.find(
-    (s) => s.title === localSong.title && s.artist === localSong.artist,
-  );
-  if (byTitle) return byTitle;
-  return serverSongs[idx] || null;
+
+  for (let idx = 0; idx < sourceSongs.length; idx++) {
+    if (matches[idx]) continue;
+    const src = sourceSongs[idx];
+    const sameIdx = targetSongs[idx];
+    if (
+      sameIdx &&
+      !used.has(sameIdx) &&
+      sameIdx.title === src.title &&
+      sameIdx.artist === src.artist
+    ) {
+      matches[idx] = sameIdx;
+      used.add(sameIdx);
+    }
+  }
+
+  for (let idx = 0; idx < sourceSongs.length; idx++) {
+    if (matches[idx]) continue;
+    const src = sourceSongs[idx];
+    const byTitle = targetSongs.find(
+      (s) => !used.has(s) && s.title === src.title && s.artist === src.artist,
+    );
+    if (byTitle) {
+      matches[idx] = byTitle;
+      used.add(byTitle);
+    }
+  }
+
+  for (let idx = 0; idx < sourceSongs.length; idx++) {
+    if (matches[idx]) continue;
+    const sameIdx = targetSongs[idx];
+    if (sameIdx && !used.has(sameIdx)) {
+      matches[idx] = sameIdx;
+      used.add(sameIdx);
+    }
+  }
+
+  return matches;
 }
 
 const songTokenMap = new WeakMap<SongItem, symbol>();
@@ -173,38 +219,53 @@ function findSongIndexByToken(songs: SongItem[], token: symbol): number {
   return songs.findIndex((s) => getSongToken(s) === token);
 }
 
-function transferMatchedTokens(prevSongs: SongItem[], nextSongs: SongItem[]): void {
-  const used = new Set<SongItem>();
+function transferMatchedTokens(
+  prevSongs: SongItem[],
+  nextSongs: SongItem[],
+): Map<number, number> {
+  const matches = matchSongsByPriority(prevSongs, nextSongs);
+  const nextIndexBySong = new Map<SongItem, number>();
+  nextSongs.forEach((song, idx) => {
+    nextIndexBySong.set(song, idx);
+  });
+  const indexMap = new Map<number, number>();
   prevSongs.forEach((prevSong, idx) => {
-    let matched: SongItem | null = null;
-    if (prevSong.netease_id) {
-      const byId = nextSongs.find(
-        (s) => !used.has(s) && s.netease_id && s.netease_id === prevSong.netease_id,
-      );
-      if (byId) matched = byId;
-    }
-    if (!matched) {
-      const byTitle = nextSongs.find(
-        (s) => !used.has(s) && s.title === prevSong.title && s.artist === prevSong.artist,
-      );
-      if (byTitle) matched = byTitle;
-    }
-    if (!matched && nextSongs[idx] && !used.has(nextSongs[idx])) {
-      matched = nextSongs[idx];
-    }
+    const matched = matches[idx];
     if (matched) {
-      used.add(matched);
       transferSongToken(prevSong, matched);
+      const nextIdx = nextIndexBySong.get(matched);
+      if (nextIdx !== undefined) {
+        indexMap.set(idx, nextIdx);
+      }
     }
   });
+  return indexMap;
+}
+
+function remapIndexRecordByIndexMap<T>(
+  rec: Record<number, T>,
+  indexMap: Map<number, number>,
+): Record<number, T> {
+  const next: Record<number, T> = {};
+  for (const [rawKey, val] of Object.entries(rec)) {
+    const k = Number(rawKey);
+    if (!Number.isInteger(k)) continue;
+    const mapped = indexMap.get(k);
+    if (mapped !== undefined) {
+      next[mapped] = val;
+    }
+  }
+  return next;
 }
 
 function mergeRuntimeFields(localPl: PlaylistConfig, serverPl: PlaylistConfig): PlaylistConfig {
+  const localSongs = localPl.songs || [];
   const serverSongs = serverPl.songs || [];
+  const matches = matchSongsByPriority(localSongs, serverSongs);
   return {
     ...localPl,
-    songs: (localPl.songs || []).map((song, idx) => {
-      const matched = matchServerSong(song, idx, serverSongs);
+    songs: localSongs.map((song, idx) => {
+      const matched = matches[idx];
       if (!matched) return song;
       const next: SongItem = { ...song };
       const nextRec = next as Record<string, unknown>;
@@ -326,6 +387,7 @@ export interface StudioStoreContextValue {
   applyTrimAndSave: () => Promise<boolean>;
   onVideoLoaded: () => void;
   onVideoTimeUpdate: () => void;
+  onFxTimeUpdate: (seconds: number) => void;
   onVideoPlayState: (playing: boolean) => void;
   togglePlay: () => void;
   seekTo: (sec: number) => void;
@@ -335,6 +397,7 @@ export interface StudioStoreContextValue {
   alignLyricToCurrent: (ln: LyricLine) => void;
   refetchLyrics: () => Promise<void>;
   updateActiveSongField: <K extends keyof SongItem>(key: K, value: SongItem[K]) => void;
+  setClipVisualEffect: (value: string) => void;
   toggleVisualModifier: (modId: string) => Promise<void>;
   saveMeta: () => Promise<boolean>;
   updateIntroField: (
@@ -429,6 +492,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('trim');
   const [activeClipIdx, setActiveClipIdx] = useState(0);
   const [mediaVersion, setMediaVersion] = useState(() => Date.now());
+  const [mediaSyncPending, setMediaSyncPending] = useState(false);
 
   const [trimCurrentSec, setTrimCurrentSec] = useState(0);
   const [trimTotalSec, setTrimTotalSec] = useState(0);
@@ -494,7 +558,10 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   const autoSearchedTokensRef = useRef<Set<symbol>>(new Set());
   const searchEpochByTokenRef = useRef<Map<symbol, number>>(new Map());
   const lyricsEpochRef = useRef(0);
+  const pendingLyricsReloadRef = useRef(false);
   const neteaseAudioEpochRef = useRef(0);
+  const mediaSyncEpochRef = useRef(0);
+  const committedMediaSyncEpochRef = useRef(0);
 
   playlistRef.current = playlist;
   dirtyRef.current = dirty;
@@ -610,12 +677,32 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const remapCandidateCaches = useCallback((indexMap: Map<number, number>) => {
+    candidatesMapRef.current = remapIndexRecordByIndexMap(candidatesMapRef.current, indexMap);
+    platformMapRef.current = remapIndexRecordByIndexMap(platformMapRef.current, indexMap);
+    customQueriesRef.current = remapIndexRecordByIndexMap(customQueriesRef.current, indexMap);
+    loadingCandidatesMapRef.current = remapIndexRecordByIndexMap(
+      loadingCandidatesMapRef.current,
+      indexMap,
+    );
+    setCandidatesMap((prev) => remapIndexRecordByIndexMap(prev, indexMap));
+    setPlatformMap((prev) => remapIndexRecordByIndexMap(prev, indexMap));
+    setCustomQueries((prev) => remapIndexRecordByIndexMap(prev, indexMap));
+    setLoadingCandidatesMap((prev) => remapIndexRecordByIndexMap(prev, indexMap));
+  }, []);
+
   const fetchPlaylist = useCallback(
     async (preserveIndex = true) => {
       try {
         const data = await fetchPlaylistApi();
+        const prevIdx = activeIdxRef.current;
+        let indexMap: Map<number, number> | null = null;
         if (preserveIndex) {
-          transferMatchedTokens(playlistRef.current.songs || [], data.songs || []);
+          indexMap = transferMatchedTokens(
+            playlistRef.current.songs || [],
+            data.songs || [],
+          );
+          remapCandidateCaches(indexMap);
         }
         playlistRef.current = data;
         setPlaylist(data);
@@ -623,7 +710,11 @@ export function StudioProvider({ children }: { children: ReactNode }) {
         setDirty(false);
         setSaveState('saved');
         setSaveError(null);
+        committedMediaSyncEpochRef.current = mediaSyncEpochRef.current;
+        setMediaSyncPending(false);
         if (!preserveIndex) {
+          pendingLyricsReloadRef.current = false;
+          setMediaVersion(Date.now());
           candidatesMapRef.current = {};
           platformMapRef.current = {};
           customQueriesRef.current = {};
@@ -636,8 +727,21 @@ export function StudioProvider({ children }: { children: ReactNode }) {
           setLoadingCandidatesMap({});
         }
         const len = (data.songs || []).length;
-        const nextIdx =
-          !preserveIndex || activeIdxRef.current >= len ? (len > 0 ? 0 : -1) : activeIdxRef.current;
+        let nextIdx = -1;
+        if (len > 0) {
+          if (!preserveIndex) {
+            nextIdx = 0;
+          } else {
+            const mapped = indexMap?.get(prevIdx);
+            if (mapped !== undefined && mapped >= 0 && mapped < len) {
+              nextIdx = mapped;
+            } else if (prevIdx >= 0) {
+              nextIdx = Math.min(prevIdx, len - 1);
+            } else {
+              nextIdx = 0;
+            }
+          }
+        }
         activeIdxRef.current = nextIdx;
         setActiveIdx(nextIdx);
         setActiveClipIdx(0);
@@ -646,16 +750,19 @@ export function StudioProvider({ children }: { children: ReactNode }) {
         setTrimTotalSec(0);
         setSourceGalleryOpen(false);
         setUndownloadedPickUrl('');
+        pendingLyricsReloadRef.current = false;
         if (nextIdx >= 0) {
           loadLyrics(nextIdx);
         } else {
+          lyricsEpochRef.current += 1;
           setLyricsLines([]);
+          setLoadingLyrics(false);
         }
       } finally {
         setHydrated(true);
       }
     },
-    [loadLyrics],
+    [loadLyrics, remapCandidateCaches],
   );
 
   const executeSave = useCallback(
@@ -665,10 +772,24 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       overridePlaylist?: PlaylistConfig;
     }): Promise<boolean> => {
       const epoch = saveEpochRef.current;
+      const syncEpochAtStart = mediaSyncEpochRef.current;
       const snapshot = opts?.overridePlaylist ?? playlistRef.current;
       setIsSaving(true);
       try {
         await savePlaylistApi(snapshot);
+        if (syncEpochAtStart > committedMediaSyncEpochRef.current) {
+          committedMediaSyncEpochRef.current = syncEpochAtStart;
+          setMediaVersion(Date.now());
+        }
+        if (mediaSyncEpochRef.current === committedMediaSyncEpochRef.current) {
+          setMediaSyncPending(false);
+          if (pendingLyricsReloadRef.current) {
+            pendingLyricsReloadRef.current = false;
+            if (activeIdxRef.current >= 0) {
+              void loadLyrics(activeIdxRef.current);
+            }
+          }
+        }
         if (saveEpochRef.current === epoch) {
           dirtyRef.current = false;
           setDirty(false);
@@ -697,7 +818,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
         setIsSaving(false);
       }
     },
-    [notify, notifyError],
+    [loadLyrics, notify, notifyError],
   );
 
   const savePlaylist = useCallback(
@@ -717,8 +838,20 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   );
 
   const retrySave = useCallback(async () => {
-    return savePlaylist({ silent: false, successMessage: '重试保存成功' });
-  }, [savePlaylist]);
+    const hadPendingMediaSync = mediaSyncEpochRef.current > committedMediaSyncEpochRef.current;
+    const hadPendingLyricsReload = pendingLyricsReloadRef.current;
+    const ok = await savePlaylist({ silent: false, successMessage: '重试保存成功' });
+    if (
+      ok &&
+      hadPendingMediaSync &&
+      !hadPendingLyricsReload &&
+      mediaSyncEpochRef.current === committedMediaSyncEpochRef.current &&
+      activeIdxRef.current >= 0
+    ) {
+      loadLyrics(activeIdxRef.current);
+    }
+    return ok;
+  }, [loadLyrics, savePlaylist]);
 
   const filteredSongs = useMemo(() => {
     const list = (playlist.songs || []).map((song, idx) => ({ song, idx }));
@@ -745,9 +878,11 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   const activeClip = activeClips[clampedClipIdx] || null;
 
   const activeMediaUrl = useMemo(() => {
-    if (!activeSong || (!activeSong.has_file && !activeSong.has_normalized)) return '';
+    if (mediaSyncPending || !activeSong || (!activeSong.has_file && !activeSong.has_normalized)) {
+      return '';
+    }
     return `/api/media/${activeIdx}?v=${mediaVersion}`;
-  }, [activeSong, activeIdx, mediaVersion]);
+  }, [mediaSyncPending, activeSong, activeIdx, mediaVersion]);
 
   const activeSourceMode = useMemo(() => getEffectiveSourceMode(activeSong), [activeSong]);
 
@@ -773,7 +908,11 @@ export function StudioProvider({ children }: { children: ReactNode }) {
 
   const selectSong = useCallback(
     (idx: number) => {
+      if (activeViewRef.current === 'song' && activeIdxRef.current === idx) {
+        return;
+      }
       setActiveView('song');
+      activeViewRef.current = 'song';
       setActiveIdx(idx);
       activeIdxRef.current = idx;
       setActiveClipIdx(0);
@@ -782,13 +921,24 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       setTrimTotalSec(0);
       setSourceGalleryOpen(false);
       setUndownloadedPickUrl('');
-      loadLyrics(idx);
+      if (mediaSyncEpochRef.current > committedMediaSyncEpochRef.current) {
+        lyricsEpochRef.current += 1;
+        setLyricsLines([]);
+        setLoadingLyrics(false);
+        pendingLyricsReloadRef.current = true;
+      } else {
+        pendingLyricsReloadRef.current = false;
+        loadLyrics(idx);
+      }
     },
     [loadLyrics],
   );
 
   const selectIntro = useCallback(() => {
+    pendingLyricsReloadRef.current = false;
     setActiveView('intro');
+    activeViewRef.current = 'intro';
+    setIsPlaying(false);
   }, []);
 
   const stepTrack = useCallback(
@@ -827,7 +977,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   const updateActiveClip = useCallback(
     (updater: (clip: SongClip, allClips: SongClip[]) => SongClip) => {
       const idx = activeIdxRef.current;
-      updateSongAt(idx, (song) => {
+      return updateSongAt(idx, (song) => {
         const clips = getEffectiveClips(song);
         const cIdx = Math.max(0, Math.min(activeClipIdx, clips.length - 1));
         const updated = clips.map((c, i) => (i === cIdx ? updater(c, clips) : c));
@@ -1069,6 +1219,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     if (!v) return;
     const dur = Number.isFinite(v.duration) ? v.duration : 0;
     setTrimTotalSec(dur);
+    if (v.closest('[hidden]')) return;
     const clipStart = activeClip ? parseSec(activeClip.start) : 0;
     if (dur > 0 && clipStart < dur) {
       v.currentTime = clipStart;
@@ -1080,7 +1231,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
 
   const onVideoTimeUpdate = useCallback(() => {
     const v = videoRef.current;
-    if (!v) return;
+    if (!v || v.closest('[hidden]')) return;
     setTrimCurrentSec(v.currentTime);
     if (trimLoopPlaying && activeClip) {
       const startSec = parseSec(activeClip.start);
@@ -1114,7 +1265,8 @@ export function StudioProvider({ children }: { children: ReactNode }) {
 
   const alignLyricToCurrent = useCallback(
     (ln: LyricLine) => {
-      const cur = videoRef.current ? videoRef.current.currentTime : trimCurrentSec;
+      const video = videoRef.current;
+      const cur = video && !video.closest('[hidden]') ? video.currentTime : trimCurrentSec;
       const offset = Math.round((cur - (ln.time || 0)) * 10) / 10;
       updateSongAt(activeIdxRef.current, (song) => ({
         ...song,
@@ -1129,11 +1281,17 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     const idx = activeIdxRef.current;
     const targetSong = (playlistRef.current.songs || [])[idx];
     if (idx < 0 || !targetSong) return;
-    const epoch = (lyricsEpochRef.current += 1);
     const songToken = getSongToken(targetSong);
+    if (mediaSyncEpochRef.current > committedMediaSyncEpochRef.current) {
+      const ok = await savePlaylist({ silent: true });
+      if (!ok) return;
+    }
+    const syncedIdx = findSongIndexByToken(playlistRef.current.songs || [], songToken);
+    if (syncedIdx < 0) return;
+    const epoch = (lyricsEpochRef.current += 1);
     setLoadingLyrics(true);
     try {
-      const data = await refetchLyricsApi(idx);
+      const data = await refetchLyricsApi(syncedIdx);
       const lines = data.lines || [];
       const currentIdx = findSongIndexByToken(playlistRef.current.songs || [], songToken);
       if (
@@ -1151,7 +1309,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
         setLoadingLyrics(false);
       }
     }
-  }, [notify, notifyError]);
+  }, [notify, notifyError, savePlaylist]);
 
   const activeLyricIdx = useMemo(() => {
     if (!lyricsLines.length) return -1;
@@ -1183,21 +1341,21 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     [updateSongAt],
   );
 
-  const toggleVisualModifier = useCallback(
-    async (modId: string) => {
-      const next = updateSongAt(activeIdxRef.current, (song) => {
-        const mods = Array.isArray(song.visual_modifiers) ? [...song.visual_modifiers] : [];
-        const pos = mods.indexOf(modId);
-        if (pos >= 0) mods.splice(pos, 1);
-        else mods.push(modId);
-        return { ...song, visual_modifiers: mods };
-      });
-      if (next) {
-        await savePlaylist({ silent: true, overridePlaylist: next });
-      }
-    },
-    [savePlaylist, updateSongAt],
-  );
+  const setClipVisualEffect = useCallback((value: string) => {
+    if (activeClips.length < 2) {
+      updateActiveSongField('visual_effect', value);
+      return;
+    }
+    updateActiveClip(clip => ({ ...clip, visual_effect: value === 'inherit' ? undefined : value }));
+  }, [activeClips.length, updateActiveClip, updateActiveSongField]);
+
+  const toggleVisualModifier = useCallback(async (modId: string) => {
+    const toggle = (mods: string[] = []) => mods.includes(modId) ? mods.filter(mod => mod !== modId) : [...mods, modId];
+    const next = activeClips.length > 1
+      ? updateActiveClip(clip => ({ ...clip, visual_modifiers: toggle(clip.visual_modifiers ?? activeSong?.visual_modifiers) }))
+      : updateSongAt(activeIdxRef.current, song => ({ ...song, visual_modifiers: toggle(song.visual_modifiers) }));
+    if (next) await savePlaylist({ silent: true, overridePlaylist: next });
+  }, [activeClips.length, activeSong?.visual_modifiers, savePlaylist, updateActiveClip, updateSongAt]);
 
   const saveMeta = useCallback(async () => {
     return savePlaylist({ silent: false });
@@ -1240,17 +1398,28 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   }, [savePlaylist]);
 
   const addEmptySong = useCallback(async () => {
+    mediaSyncEpochRef.current += 1;
     const nextSongs = [...(playlistRef.current.songs || []), createEmptySong()];
     const nextPl = { ...playlistRef.current, songs: nextSongs };
     commitPlaylist(nextPl, true);
     setRackFilter('all');
     const newIdx = nextSongs.length - 1;
     setActiveView('song');
+    activeViewRef.current = 'song';
     setActiveIdx(newIdx);
     activeIdxRef.current = newIdx;
     setActiveClipIdx(0);
     setActiveTab('stage');
+    activeTabRef.current = 'stage';
+    setIsPlaying(false);
+    setTrimCurrentSec(0);
+    setTrimTotalSec(0);
+    setSourceGalleryOpen(false);
+    setUndownloadedPickUrl('');
+    lyricsEpochRef.current += 1;
     setLyricsLines([]);
+    setLoadingLyrics(false);
+    pendingLyricsReloadRef.current = false;
     const ok = await savePlaylist({ silent: true, overridePlaylist: nextPl });
     if (ok) {
       notify('已新增曲目');
@@ -1262,6 +1431,13 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       const songs = playlistRef.current.songs || [];
       const target = songs[idx];
       if (!target || !window.confirm(`确定删除「${target.title}」？`)) return;
+      const deletedToken = songTokenMap.get(target);
+      if (deletedToken) {
+        autoSearchedTokensRef.current.delete(deletedToken);
+        searchEpochByTokenRef.current.delete(deletedToken);
+      }
+      mediaSyncEpochRef.current += 1;
+      setMediaSyncPending(true);
       const prevActive = activeIdxRef.current;
       const nextSongs = songs.filter((_, i) => i !== idx);
       const nextPl = { ...playlistRef.current, songs: nextSongs };
@@ -1295,10 +1471,18 @@ export function StudioProvider({ children }: { children: ReactNode }) {
         lyricsEpochRef.current += 1;
         setLyricsLines([]);
         setLoadingLyrics(false);
+        pendingLyricsReloadRef.current = nextIdx >= 0;
       }
       const ok = await savePlaylist({ silent: true, overridePlaylist: nextPl });
       if (ok) {
-        if (nextIdx >= 0) loadLyrics(nextIdx);
+        if (
+          nextIdx >= 0 &&
+          pendingLyricsReloadRef.current &&
+          mediaSyncEpochRef.current === committedMediaSyncEpochRef.current
+        ) {
+          pendingLyricsReloadRef.current = false;
+          loadLyrics(nextIdx);
+        }
         notify('已删除曲目');
       }
     },
@@ -1312,6 +1496,9 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       if (fromIdx < 0 || fromIdx >= nextSongs.length || toIdx < 0 || toIdx >= nextSongs.length) {
         return;
       }
+      mediaSyncEpochRef.current += 1;
+      setMediaSyncPending(true);
+      setIsPlaying(false);
       const [moved] = nextSongs.splice(fromIdx, 1);
       nextSongs.splice(toIdx, 0, moved);
       let nextActive = activeIdxRef.current;
@@ -1555,7 +1742,9 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   const uploadLocalFile = useCallback(
     async (file: File) => {
       const idx = activeIdxRef.current;
-      if (!file || idx < 0) return;
+      const targetSong = (playlistRef.current.songs || [])[idx];
+      if (!file || idx < 0 || !targetSong) return;
+      const songToken = getSongToken(targetSong);
       setUploadingLocal(true);
       setIsSaving(true);
       if (dirtyRef.current) {
@@ -1563,14 +1752,23 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       }
       const runUpload = async () => {
         try {
-          const res = await uploadMediaApi(idx, file);
+          while (mediaSyncEpochRef.current > committedMediaSyncEpochRef.current) {
+            const synced = await executeSave({ silent: true });
+            if (!synced) return;
+            setIsSaving(true);
+          }
+          const currentIdx = findSongIndexByToken(playlistRef.current.songs || [], songToken);
+          if (currentIdx < 0) return;
+          const res = await uploadMediaApi(currentIdx, file);
           setMediaVersion(Date.now());
           if (!dirtyRef.current) {
             await fetchPlaylist(true);
             notify(`已导入本地视频: ${file.name}`);
           } else {
+            const postUploadIdx = findSongIndexByToken(playlistRef.current.songs || [], songToken);
+            if (postUploadIdx < 0) return;
             const next = updateSongAt(
-              idx,
+              postUploadIdx,
               (song) => ({
                 ...song,
                 file_path: res.file_path,
@@ -1612,23 +1810,31 @@ export function StudioProvider({ children }: { children: ReactNode }) {
 
   const runPreprocess = useCallback(async () => {
     setShowTools(false);
+    if (mediaSyncEpochRef.current > committedMediaSyncEpochRef.current) {
+      const ok = await savePlaylist({ silent: true });
+      if (!ok) return;
+    }
     try {
       await runPreprocessApi(false);
       notify('已启动素材预处理');
     } catch (err) {
       notifyError(err instanceof Error ? err.message : '已有任务在进行中');
     }
-  }, [notify, notifyError]);
+  }, [notify, notifyError, savePlaylist]);
 
   const analyzeAllVisuals = useCallback(async () => {
     setShowTools(false);
+    if (mediaSyncEpochRef.current > committedMediaSyncEpochRef.current) {
+      const ok = await savePlaylist({ silent: true });
+      if (!ok) return;
+    }
     try {
       await analyzeVisualsApi();
       notify('已启动视觉分析与双语歌词');
     } catch (err) {
       notifyError(err instanceof Error ? err.message : '已有任务在进行中');
     }
-  }, [notify, notifyError]);
+  }, [notify, notifyError, savePlaylist]);
 
   const pollStatus = useCallback(async () => {
     try {
@@ -1637,17 +1843,57 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       const isBusy = Boolean(data.is_downloading || data.is_rendering);
       if (wasBusyRef.current && !isBusy) {
         setMediaVersion(Date.now());
+        setIsPlaying(false);
         setUndownloadedPickUrl('');
         try {
           const serverPl = await fetchPlaylistApi();
           if (!dirtyRef.current) {
-            transferMatchedTokens(playlistRef.current.songs || [], serverPl.songs || []);
+            const prevIdx = activeIdxRef.current;
+            const prevSongs = playlistRef.current.songs || [];
+            const nextSongs = serverPl.songs || [];
+            const prevSong = prevIdx >= 0 ? prevSongs[prevIdx] : null;
+            const indexMap = transferMatchedTokens(prevSongs, nextSongs);
+            remapCandidateCaches(indexMap);
+            committedMediaSyncEpochRef.current = mediaSyncEpochRef.current;
+            setMediaSyncPending(false);
+            pendingLyricsReloadRef.current = false;
             playlistRef.current = serverPl;
             setPlaylist(serverPl);
             setDirty(false);
             setSaveState('saved');
-            if (activeIdxRef.current >= 0) {
-              loadLyrics(activeIdxRef.current);
+            const len = nextSongs.length;
+            let nextIdx = -1;
+            if (len > 0) {
+              const mapped = indexMap.get(prevIdx);
+              if (mapped !== undefined && mapped >= 0 && mapped < len) {
+                nextIdx = mapped;
+              } else if (prevIdx >= 0) {
+                nextIdx = Math.min(prevIdx, len - 1);
+              } else {
+                nextIdx = 0;
+              }
+            }
+            const nextSong = nextIdx >= 0 ? nextSongs[nextIdx] : null;
+            const sameSongIdentity =
+              Boolean(prevSong && nextSong) &&
+              prevIdx === nextIdx &&
+              prevSong?.title === nextSong?.title &&
+              prevSong?.artist === nextSong?.artist &&
+              (prevSong?.netease_id || '') === (nextSong?.netease_id || '');
+            activeIdxRef.current = nextIdx;
+            setActiveIdx(nextIdx);
+            if (!sameSongIdentity) {
+              setActiveClipIdx(0);
+              setTrimCurrentSec(0);
+              setTrimTotalSec(0);
+              setSourceGalleryOpen(false);
+            }
+            if (nextIdx >= 0) {
+              loadLyrics(nextIdx);
+            } else {
+              lyricsEpochRef.current += 1;
+              setLyricsLines([]);
+              setLoadingLyrics(false);
             }
           } else {
             const merged = mergeRuntimeFields(playlistRef.current, serverPl);
@@ -1660,7 +1906,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       wasBusyRef.current = isBusy;
     } catch {
     }
-  }, [loadLyrics]);
+  }, [loadLyrics, remapCandidateCaches]);
 
   const openRemotionStudio = useCallback(async () => {
     dismissToast();
@@ -1814,6 +2060,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   const closeBiliModal = useCallback(() => {
     biliModalOpenRef.current = false;
     stopBiliPoll();
+    setBiliQrLoading(false);
     setShowBiliModal(false);
   }, [stopBiliPoll]);
 
@@ -1875,18 +2122,31 @@ export function StudioProvider({ children }: { children: ReactNode }) {
 
   const downloadNeteaseAudioSingle = useCallback(
     async (idx: number, mode: 'video' | 'audio', quality: string) => {
+      const targetSong = (playlistRef.current.songs || [])[idx];
+      if (idx < 0 || !targetSong) return;
+      const songToken = getSongToken(targetSong);
+      if (mediaSyncEpochRef.current > committedMediaSyncEpochRef.current) {
+        const ok = await savePlaylist({ silent: true });
+        if (!ok) return;
+      }
+      const currentIdx = findSongIndexByToken(playlistRef.current.songs || [], songToken);
+      if (currentIdx < 0) return;
       try {
-        const data = await downloadNeteaseAudioSingleApi(idx, mode, quality, true);
+        const data = await downloadNeteaseAudioSingleApi(currentIdx, mode, quality, true);
         notify(data.message || '已加入队列');
       } catch (err) {
         notifyError(err instanceof Error ? err.message : '启动失败');
       }
     },
-    [notify, notifyError],
+    [notify, notifyError, savePlaylist],
   );
 
   const downloadNeteaseAudioBatch = useCallback(
     async (mode: 'video' | 'audio', quality: string, missingOnly: boolean) => {
+      if (mediaSyncEpochRef.current > committedMediaSyncEpochRef.current) {
+        const ok = await savePlaylist({ silent: true });
+        if (!ok) return;
+      }
       try {
         await downloadNeteaseAudioBatchApi(mode, quality, !missingOnly, missingOnly);
         setShowNeteaseAudioModal(false);
@@ -1895,7 +2155,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
         notifyError(err instanceof Error ? err.message : '已有任务在进行中');
       }
     },
-    [notify, notifyError],
+    [notify, notifyError, savePlaylist],
   );
 
   useEffect(() => {
@@ -1936,7 +2196,18 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   }, [clearToastTimer, fetchBiliStatus, fetchNeteaseAudioCfg, fetchPlaylist, pollStatus, stopBiliPoll]);
 
   useEffect(() => {
+    const showKeyPress = (id: string) => {
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      const button = document.getElementById(id);
+      if (!button || button.getAnimations().length) return;
+      button.animate(
+        [{ transform: 'translateY(2px)' }, { transform: 'translateY(0)' }],
+        { duration: 120, easing: 'ease-out' },
+      );
+    };
+
     const onKeydown = (e: KeyboardEvent) => {
+      if (e.isComposing || e.defaultPrevented) return;
       if (e.key === 'Escape') {
         neteaseAudioEpochRef.current += 1;
         if (showBiliModal) closeBiliModal();
@@ -1996,12 +2267,15 @@ export function StudioProvider({ children }: { children: ReactNode }) {
         if (videoRef.current.closest('[hidden]')) return;
         e.preventDefault();
         togglePlay();
+        showKeyPress('transport-play-key');
       } else if (e.key === 'i' || e.key === 'I') {
         e.preventDefault();
         setTrimPoint('in');
+        showKeyPress('trim-set-in-key');
       } else if (e.key === 'o' || e.key === 'O') {
         e.preventDefault();
         setTrimPoint('out');
+        showKeyPress('trim-set-out-key');
       } else if (e.key === 'ArrowLeft') {
         e.preventDefault();
         seekBy(-(e.shiftKey ? 2 : 0.5));
@@ -2106,6 +2380,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     applyTrimAndSave,
     onVideoLoaded,
     onVideoTimeUpdate,
+    onFxTimeUpdate: setTrimCurrentSec,
     onVideoPlayState,
     togglePlay,
     seekTo,
@@ -2115,6 +2390,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     alignLyricToCurrent,
     refetchLyrics,
     updateActiveSongField,
+    setClipVisualEffect,
     toggleVisualModifier,
     saveMeta,
     updateIntroField,

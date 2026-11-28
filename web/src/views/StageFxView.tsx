@@ -19,6 +19,10 @@ export function StageFxView({ embedded = false }: { embedded?: boolean }) {
   const {
     activeIdx,
     activeSong,
+    activeClip,
+    activeClipIdx,
+    activeClips,
+    setClipVisualEffect,
     isSaving,
     updateActiveSongField,
     toggleVisualModifier,
@@ -28,7 +32,9 @@ export function StageFxView({ embedded = false }: { embedded?: boolean }) {
 
   if (!activeSong) return null;
 
-  const mods = Array.isArray(activeSong.visual_modifiers) ? activeSong.visual_modifiers : [];
+  const clipScoped = activeClips.length > 1;
+  const effect = clipScoped ? activeClip?.visual_effect ?? 'inherit' : activeSong.visual_effect || 'auto';
+  const mods = (clipScoped ? activeClip?.visual_modifiers : undefined) ?? activeSong.visual_modifiers ?? [];
   const readyAssetCount = [
     activeSong.has_file,
     activeSong.has_normalized,
@@ -37,7 +43,7 @@ export function StageFxView({ embedded = false }: { embedded?: boolean }) {
     activeSong.has_lyrics,
   ].filter(Boolean).length;
   const txActive = (activeSong.transition_style || 'inherit') !== 'inherit';
-  const visualActive = (activeSong.visual_effect || 'auto') !== 'auto';
+  const visualActive = effect !== 'auto' && effect !== 'inherit';
   const modsActive = mods.length > 0;
   const hudActive =
     activeSong.lyrics_enabled === false || (activeSong.shadow_boost || 'auto') !== 'auto';
@@ -91,7 +97,7 @@ export function StageFxView({ embedded = false }: { embedded?: boolean }) {
               <div className={visualActive ? 'fx-block active' : 'fx-block'}>
                 <div className="fx-block-head">
                   <div className="fx-block-title">
-                    <span>VISUAL STAGE</span>
+                    <span>{clipScoped ? `CLIP ${activeClipIdx + 1} FX` : 'VISUAL STAGE'}</span>
                   </div>
                   <span className="te-tag">{visualActive ? 'CUSTOM' : 'AUTO'}</span>
                 </div>
@@ -99,9 +105,10 @@ export function StageFxView({ embedded = false }: { embedded?: boolean }) {
                   className="te-select"
                   data-testid="fx-visual-select"
                   aria-label="舞台效果"
-                  value={activeSong.visual_effect || 'auto'}
-                  onChange={(e) => updateActiveSongField('visual_effect', e.target.value)}
+                  value={effect}
+                  onChange={(e) => setClipVisualEffect(e.target.value)}
                 >
+                  {clipScoped && <option value="inherit">Use track effect</option>}
                   {VISUAL_EFFECT_OPTIONS.map((opt) => (
                     <option key={opt.value} value={opt.value}>
                       {opt.label}
@@ -121,7 +128,7 @@ export function StageFxView({ embedded = false }: { embedded?: boolean }) {
                   {VISUAL_MODIFIER_OPTIONS.map((mod) => {
                     const on = mods.includes(mod.id);
                     return (
-                      <button
+                      <TactileButton customLayout
                         key={mod.id}
                         type="button"
                         data-testid={`fx-mod-${mod.id}`}
@@ -134,7 +141,7 @@ export function StageFxView({ embedded = false }: { embedded?: boolean }) {
                           <span>{mod.label}</span>
                         </span>
                         <span className="mod-key-code">{mod.code}</span>
-                      </button>
+                      </TactileButton>
                     );
                   })}
                 </div>

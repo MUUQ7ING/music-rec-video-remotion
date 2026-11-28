@@ -72,6 +72,8 @@ class SongClip(BaseModel):
     reason: str = ""
     reason_mode: Literal["auto", "manual"] = "auto"
     reason_timings: list[float] = Field(default_factory=list)
+    visual_effect: str | None = None
+    visual_modifiers: list[str] | None = None
 
 
 class SongItem(BaseModel):

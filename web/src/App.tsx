@@ -1,3 +1,5 @@
+import { Segmented } from '@andeus/ui';
+import { WorkstationResize } from './components/WorkstationResize';
 import { lazy, Suspense, useState } from 'react';
 import { ColumnDivider } from './components/ColumnDivider';
 import { ConsoleDrawer } from './components/ConsoleDrawer';
@@ -72,31 +74,17 @@ function StudioShell() {
 
                   <span className="deck-bar-sep" />
 
-                  <div className="tab-strip">
-                    <button
-                      type="button"
-                      data-testid="tab-trim"
-                      className={activeTab === 'trim' ? 'tab-btn active' : 'tab-btn'}
-                      onClick={() => setActiveTab('trim')}
-                    >
-                      Lyrics & Copy
-                    </button>
-                    <button
-                      type="button"
-                      data-testid="tab-source"
-                      className={activeTab === 'source' ? 'tab-btn active' : 'tab-btn'}
-                      onClick={() => setActiveTab('source')}
-                    >
-                      Source
-                    </button>
-                    <button
-                      type="button"
-                      data-testid="tab-stage"
-                      className={activeTab === 'stage' ? 'tab-btn active' : 'tab-btn'}
-                      onClick={() => setActiveTab('stage')}
-                    >
-                      Stage &amp; FX
-                    </button>
+                  <div className="tab-strip andeus-tabs">
+                    <Segmented
+                      size="s"
+                      value={activeTab}
+                      onChange={setActiveTab}
+                      options={[
+                        { value: 'trim', label: <span data-testid="tab-trim">Lyrics &amp; Copy</span> },
+                        { value: 'source', label: <span data-testid="tab-source">Source</span> },
+                        { value: 'stage', label: <span data-testid="tab-stage">Stage &amp; FX</span> },
+                      ]}
+                    />
                   </div>
                 </div>
 
@@ -129,6 +117,7 @@ function StudioShell() {
         <ConsoleDrawer />
       </div>
 
+      <WorkstationResize />
       <NeteaseImportModal />
       <BiliAuthModal />
       <NeteaseAudioModal />

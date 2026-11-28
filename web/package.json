@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@andeus/ui": "file:vendor/andeus-ui-0.1.0-94c08bb.tgz",
     "@fontsource-variable/archivo": "5.3.0",
     "@remotion/player": "4.0.546",
     "qrcode-generator": "^2.0.4",

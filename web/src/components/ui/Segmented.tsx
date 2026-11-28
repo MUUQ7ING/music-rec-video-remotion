@@ -1,3 +1,5 @@
+import { Segmented as AndeusSegmented } from '@andeus/ui';
+
 export interface SegmentedOption<T extends string> {
   value: T;
   label: string;
@@ -18,26 +20,16 @@ export function Segmented<T extends string>({
   className = '',
 }: SegmentedProps<T>) {
   return (
-    <div
-      className={className ? `seg-group ${className}` : 'seg-group'}
-      role="radiogroup"
-    >
-      {options.map((opt) => {
-        const active = opt.value === value;
-        return (
-          <button
-            key={opt.value}
-            type="button"
-            role="radio"
-            aria-checked={active}
-            data-testid={opt.testId}
-            className={active ? 'seg-btn active' : 'seg-btn'}
-            onClick={() => onChange(opt.value)}
-          >
-            {opt.label}
-          </button>
-        );
-      })}
+    <div className={`andeus-tabs ${className}`}>
+      <AndeusSegmented
+        size="s"
+        value={value}
+        onChange={onChange}
+        options={options.map(option => ({
+          value: option.value,
+          label: <span data-testid={option.testId}>{option.label}</span>,
+        }))}
+      />
     </div>
   );
 }

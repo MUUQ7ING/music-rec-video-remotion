@@ -547,7 +547,7 @@ def download_netease_for_song(
     """
     Download NetEase audio for a SongItem.
     - mode == 'audio': saves pure audio to audio/<slug>.<ext> and sets song.audio_path.
-    - mode == 'video': also fetches album cover, composes 1080p MP4 to raw/<slug>.mp4, and sets song.file_path.
+    - mode == 'video': also fetches album cover, composes 1080p MP4 to raw/<slug>_cover.mp4, and sets song.file_path.
     """
     log = log_fn or print
     cfg = load_music_source_config()
@@ -590,7 +590,7 @@ def download_netease_for_song(
         if cover_path and cover_path.is_file():
             song.cover_path = to_relative_path(str(cover_path), str(base_dir))
 
-        raw_mp4 = base_dir / "raw" / f"{stem}.mp4"
+        raw_mp4 = base_dir / "raw" / f"{stem}_cover.mp4"
         compose_cover_video(
             audio_path=audio_path,
             cover_path=cover_path,

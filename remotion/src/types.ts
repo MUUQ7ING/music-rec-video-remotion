@@ -59,6 +59,8 @@ export interface SongClip {
   reason?: string;
   reason_mode?: 'auto' | 'manual';
   reason_timings?: number[];
+  visual_effect?: string;
+  visual_modifiers?: string[];
 }
 
 export interface SongItem {

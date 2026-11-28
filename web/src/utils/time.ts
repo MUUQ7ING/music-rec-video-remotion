@@ -72,6 +72,7 @@ export function syncTimingsArray(
 
 export function cloneClip(c: Partial<SongClip>): SongClip {
   return {
+    ...c,
     start: c.start || '0:00',
     end: c.end || '0:30',
     reason: c.reason || '',
@@ -106,6 +107,8 @@ export function applyClipsToSong(song: SongItem, clips: SongClip[]): SongItem {
     reason: first.reason,
     reason_mode: first.reason_mode,
     reason_timings: [...first.reason_timings],
+    ...(normalized.length === 1 && typeof first.visual_effect === 'string' ? { visual_effect: first.visual_effect } : {}),
+    ...(normalized.length === 1 && Array.isArray(first.visual_modifiers) ? { visual_modifiers: first.visual_modifiers } : {}),
     clips: normalized.length > 1 ? normalized : [],
   };
 }

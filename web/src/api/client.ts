@@ -1,3 +1,4 @@
+import { isPublicDemo, publicDemoResponse } from './publicDemo';
 import {
   RUNTIME_SONG_FIELDS,
   type BiliQrGenerateResponse,
@@ -34,7 +35,7 @@ export function extractErrorMessage(data: unknown, fallback: string): string {
 }
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
+  const res = await (isPublicDemo ? publicDemoResponse(url, init) : fetch(url, init));
   const data = await res.json().catch(() => null);
   if (!res.ok) {
     throw new ApiError(res.status, extractErrorMessage(data, `HTTP ${res.status}`), data);
@@ -235,6 +236,30 @@ export async function cancelRemotionApi(): Promise<{ status: string; message?: s
   return requestJson('/api/remotion/cancel', { method: 'POST' });
 }
 
+export function fetchProjectsApi() {
+  return requestJson<{ active: string; projects: { id: string; name: string }[] }>('/api/projects');
+}
+
+export function createProjectApi(name: string, duplicate: boolean) {
+  return requestJson('/api/projects', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, duplicate }),
+  });
+}
+
+export function activateProjectApi(id: string) {
+  return requestJson(`/api/projects/${encodeURIComponent(id)}/activate`, { method: 'POST' });
+}
+
+export function importProjectsApi(urls: string[], limit: number) {
+  return requestJson('/api/projects/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ urls, limit }),
+  });
+}
+
 export async function importNeteaseApi(
   url: string,
   limit: number,
@@ -245,6 +270,16 @@ export async function importNeteaseApi(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ url, limit, append }),
   });
+}
+
+export function fetchYoutubeCookiesApi() {
+  return requestJson<{ configured: boolean }>('/api/youtube/cookies');
+}
+
+export function importYoutubeCookiesApi(file: File) {
+  const form = new FormData();
+  form.append('file', file);
+  return requestJson<{ configured: boolean }>('/api/youtube/cookies', { method: 'POST', body: form });
 }
 
 export async function fetchBiliStatusApi(): Promise<BiliStatus> {

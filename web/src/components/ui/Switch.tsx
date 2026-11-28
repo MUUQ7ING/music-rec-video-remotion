@@ -1,3 +1,5 @@
+import { TactileButton } from './TactileButton';
+
 export interface SwitchProps {
   checked: boolean;
   onChange: (next: boolean) => void;
@@ -15,7 +17,7 @@ export function Switch({
 }: SwitchProps) {
   return (
     <div className="switch-wrap">
-      <button
+      <TactileButton customLayout
         type="button"
         role="switch"
         aria-checked={checked}
@@ -23,6 +25,7 @@ export function Switch({
         disabled={disabled}
         data-testid={testId}
         className={checked ? 'te-switch on' : 'te-switch'}
+        style={{ background: 'var(--bg-well)', boxShadow: 'var(--shadow-inset)' }}
         onClick={() => onChange(!checked)}
       />
       <span className={checked ? 'switch-led on' : 'switch-led'} />

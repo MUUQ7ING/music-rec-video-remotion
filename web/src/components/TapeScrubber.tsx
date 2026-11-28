@@ -6,7 +6,7 @@ import { PixelIcon } from './ui/PixelIcon';
 import { TapeWaveform } from './TapeWaveform';
 import { TactileButton } from './ui/TactileButton';
 
-export function TapeScrubber({ previewTransport }: { previewTransport?: { playing: boolean; toggle: () => void } }) {
+export function TapeScrubber({ previewTransport }: { previewTransport?: { playing: boolean; toggle: () => void; seek: (seconds: number) => void } }) {
   const {
     activeClip,
     activeIdx,
@@ -23,6 +23,7 @@ export function TapeScrubber({ previewTransport }: { previewTransport?: { playin
     setScrubPoint,
   } = useStudioStore();
 
+  const seek = previewTransport?.seek ?? seekTo;
   const playing = previewTransport?.playing ?? isPlaying;
   const trackRef = useRef<HTMLDivElement | null>(null);
   const draggingHandleRef = useRef<'in' | 'out' | null>(null);
@@ -63,7 +64,7 @@ export function TapeScrubber({ previewTransport }: { previewTransport?: { playin
     const rect = trackRef.current.getBoundingClientRect();
     if (rect.width <= 0) return;
     const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    seekTo(ratio * total);
+    seek(ratio * total);
   };
 
   return (
@@ -117,11 +118,14 @@ export function TapeScrubber({ previewTransport }: { previewTransport?: { playin
           <TactileButton
             variant="dark"
             size="sm"
+            id="transport-play-key"
             data-testid="transport-play"
+            aria-keyshortcuts="Space"
             onClick={previewTransport?.toggle ?? (() => togglePlay())}
           >
             <PixelIcon name={playing ? 'pause' : 'play'} />
             {playing ? 'Pause' : 'Play'}
+            <kbd aria-hidden="true">Space</kbd>
           </TactileButton>
           <TactileButton
             size="sm"
@@ -135,14 +139,14 @@ export function TapeScrubber({ previewTransport }: { previewTransport?: { playin
           <TactileButton
             size="sm"
             data-testid="transport-jump-in"
-            onClick={() => seekTo(startSec)}
+            onClick={() => seek(startSec)}
           >
             IN ⇥
           </TactileButton>
           <TactileButton
             size="sm"
             data-testid="transport-jump-out"
-            onClick={() => seekTo(endSec)}
+            onClick={() => seek(endSec)}
           >
             ⇤ OUT
           </TactileButton>
@@ -171,7 +175,13 @@ export function TapeScrubber({ previewTransport }: { previewTransport?: { playin
                     </TactileButton>
                   ))}
                 </div>
-                <TactileButton className="trim-set-key" size="xs" onClick={() => setTrimPoint(point)}>
+                <TactileButton
+                  id={`trim-set-${point}-key`}
+                  className="trim-set-key"
+                  size="xs"
+                  aria-keyshortcuts={isIn ? 'I' : 'O'}
+                  onClick={() => setTrimPoint(point)}
+                >
                   {isIn ? 'Set I' : 'Set O'}
                 </TactileButton>
               </div>

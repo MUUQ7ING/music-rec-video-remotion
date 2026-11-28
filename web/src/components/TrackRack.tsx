@@ -43,9 +43,9 @@ export function TrackRack() {
       </div>
 
       <div className="rack-list">
-        <div
-          role="button"
-          tabIndex={0}
+        <TactileButton customLayout
+          active={activeView === 'intro'}
+          aria-pressed={activeView === 'intro'}
           data-testid="rack-intro"
           className={
             activeView === 'intro' ? 'rack-item intro-item active' : 'rack-item intro-item'
@@ -59,18 +59,18 @@ export function TrackRack() {
           }}
         >
           <span className="rack-num">00</span>
-          <div className="rack-thumb">INTRO</div>
-          <div className="rack-meta">
-            <div className="rack-song">开场白 &amp; 全局转场</div>
-            <div className="rack-artist">
+          <span className="rack-thumb">INTRO</span>
+          <span className="rack-meta">
+            <span className="rack-song">开场白 &amp; 全局转场</span>
+            <span className="rack-artist">
               {playlist.transition?.video_style || 'cross_dissolve'}
-            </div>
-          </div>
-          <div className="rack-right">
+            </span>
+          </span>
+          <span className="rack-right">
             <span className="rack-dur">{introEnabled ? `${introDur}s` : 'OFF'}</span>
             <span className={introEnabled ? 'te-led green' : 'te-led off'} />
-          </div>
-        </div>
+          </span>
+        </TactileButton>
 
         {filteredSongs.map(({ song, idx }) => {
           const isActive = activeView === 'song' && activeIdx === idx;
@@ -84,17 +84,24 @@ export function TrackRack() {
           const clipCount = Array.isArray(song.clips) ? song.clips.length : 0;
 
           return (
-            <div
+            <TactileButton customLayout
               key={`${idx}-${song.netease_id || song.title}`}
-              role="button"
-              tabIndex={0}
+              active={isActive}
+              aria-pressed={isActive}
               draggable
               data-testid={`rack-song-${idx}`}
               className={itemClasses.join(' ')}
               onClick={() => selectSong(idx)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
+                if (e.key === 'Enter') {
                   e.preventDefault();
+                  selectSong(idx);
+                } else if (e.key === ' ') {
+                  if (isActive) {
+                    return;
+                  }
+                  e.preventDefault();
+                  e.stopPropagation();
                   selectSong(idx);
                 }
               }}
@@ -121,23 +128,23 @@ export function TrackRack() {
                 ⋮⋮
               </span>
               <span className="rack-num">{String(idx + 1).padStart(2, '0')}</span>
-              <div className="rack-thumb">
+              <span className="rack-thumb">
                 <SafeImage
                   src={coverSrc(song)}
                   alt={song.title}
                   fallback={<span>NO IMG</span>}
                 />
-              </div>
-              <div className="rack-meta">
-                <div className="rack-song">{song.title || '未命名曲目'}</div>
-                <div className="rack-artist">{song.artist || '未知歌手'}</div>
-              </div>
-              <div className="rack-right">
+              </span>
+              <span className="rack-meta">
+                <span className="rack-song">{song.title || '未命名曲目'}</span>
+                <span className="rack-artist">{song.artist || '未知歌手'}</span>
+              </span>
+              <span className="rack-right">
                 <span className="rack-dur">
                   {formatSongDuration(song)}
                   {clipCount > 1 ? <span className="clip-tag">×{clipCount}</span> : null}
                 </span>
-                <div className="led-group">
+                <span className="led-group">
                   <span className="led-cell" title="视频素材">
                     <span className={song.has_file ? 'te-led green' : 'te-led off'} />V
                   </span>
@@ -147,9 +154,9 @@ export function TrackRack() {
                   <span className="led-cell" title="双语歌词">
                     <span className={song.has_lyrics ? 'te-led green' : 'te-led off'} />L
                   </span>
-                </div>
-              </div>
-            </div>
+                </span>
+              </span>
+            </TactileButton>
           );
         })}
 

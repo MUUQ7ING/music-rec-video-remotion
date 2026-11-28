@@ -1,3 +1,4 @@
+import { TactileButton } from './ui/TactileButton';
 import { useStudioStore } from '../state/useStudioStore';
 
 export function ConsoleDrawer() {
@@ -49,23 +50,23 @@ export function ConsoleDrawer() {
 
         <div className="console-right">
           {showLogs && logs.length > 0 ? (
-            <button
+            <TactileButton customLayout
               type="button"
               className="console-btn"
               data-testid="console-clear-btn"
               onClick={() => clearLogs()}
             >
               CLEAR
-            </button>
+            </TactileButton>
           ) : null}
-          <button
+          <TactileButton customLayout
             type="button"
             className="console-btn"
             data-testid="console-toggle-btn"
             onClick={() => setShowLogs((prev) => !prev)}
           >
             LOGS ({logs.length}) {showLogs ? '▼' : '▲'}
-          </button>
+          </TactileButton>
         </div>
       </div>
     </footer>

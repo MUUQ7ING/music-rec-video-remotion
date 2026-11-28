@@ -13,7 +13,7 @@ body,
   background: var(--bg-chassis);
   color: var(--ink);
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: var(--type-reading);
   line-height: 1.42;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
@@ -88,7 +88,7 @@ body,
   color: var(--ink-on-dark);
   border-radius: var(--radius-panel);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--type-label);
   font-weight: 600;
   letter-spacing: 0.09em;
   flex-shrink: 0;
@@ -107,7 +107,7 @@ body,
   border-radius: var(--radius-panel);
   color: var(--ink);
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: var(--type-reading);
   font-weight: 600;
   padding: 3px 6px;
   width: 150px;
@@ -133,7 +133,7 @@ body,
   background: transparent;
   color: var(--ink-mute);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--type-legend);
   letter-spacing: 0.05em;
   cursor: pointer;
   white-space: nowrap;
@@ -172,7 +172,7 @@ body,
   border: 1px solid var(--border);
   border-radius: var(--radius-panel);
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: var(--type-label);
   color: var(--ink-dim);
   white-space: nowrap;
 }
@@ -189,7 +189,7 @@ body,
   background: var(--btn-bg);
   color: var(--ink);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--type-label);
   font-weight: 500;
   letter-spacing: 0.02em;
   cursor: pointer;
@@ -272,20 +272,20 @@ body,
 .te-btn-sm {
   height: 24px;
   padding: 0 7px;
-  font-size: 10.5px;
+  font-size: var(--type-label);
 }
 
 .te-btn-xs {
   height: 21px;
   padding: 0 6px;
-  font-size: 10px;
+  font-size: var(--type-legend);
 }
 
 .te-icon-btn {
   width: 27px;
   height: 27px;
   padding: 0;
-  font-size: 13px;
+  font-size: var(--type-reading);
 }
 
 .te-led {
@@ -341,7 +341,7 @@ body,
   background: var(--bg-well);
   color: var(--ink-dim);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--type-legend);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -375,7 +375,7 @@ body,
   background: var(--bg-panel-alt);
   color: var(--ink);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--type-legend);
   font-weight: 500;
 }
 
@@ -408,7 +408,7 @@ body,
 .tools-section-label {
   padding: 4px 8px 2px;
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: var(--type-legend);
   font-weight: 600;
   letter-spacing: 0.08em;
   color: var(--ink-mute);
@@ -426,7 +426,7 @@ body,
   border-radius: var(--radius-panel);
   color: var(--ink);
   font-family: var(--font-sans);
-  font-size: 12px;
+  font-size: var(--type-control);
   cursor: pointer;
   text-align: left;
   transition: background var(--dur-press) var(--ease-detent), border-color var(--dur-press) var(--ease-detent);
@@ -480,7 +480,7 @@ body,
 
 .rack-title {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--type-legend);
   font-weight: 600;
   letter-spacing: 0.09em;
   color: var(--ink-dim);
@@ -501,7 +501,7 @@ body,
   padding: 20px 10px;
   text-align: center;
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: var(--type-label);
   color: var(--ink-mute);
 }
 
@@ -547,7 +547,7 @@ body,
 
 .drag-grip {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--type-legend);
   line-height: 1;
   color: var(--ink-mute);
   cursor: grab;
@@ -556,7 +556,7 @@ body,
 
 .rack-num {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: var(--type-label);
   font-weight: 600;
   color: var(--ink-mute);
 }
@@ -576,7 +576,7 @@ body,
   align-items: center;
   justify-content: center;
   font-family: var(--font-mono);
-  font-size: 8.5px;
+  font-size: var(--type-legend);
   color: var(--screen-dim);
   flex-shrink: 0;
 }
@@ -593,7 +593,7 @@ body,
 }
 
 .rack-song {
-  font-size: 12px;
+  font-size: var(--type-control);
   font-weight: 600;
   color: var(--ink);
   white-space: nowrap;
@@ -602,7 +602,7 @@ body,
 }
 
 .rack-artist {
-  font-size: 10.5px;
+  font-size: var(--type-label);
   color: var(--ink-dim);
   white-space: nowrap;
   overflow: hidden;
@@ -618,13 +618,13 @@ body,
 
 .rack-dur {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--type-legend);
   color: var(--ink-dim);
 }
 
 .clip-tag {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--type-legend);
   padding: 0 3px;
   border: 1px solid var(--accent);
   color: var(--accent);
@@ -643,7 +643,7 @@ body,
   align-items: center;
   gap: 2px;
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--type-legend);
   color: var(--ink-mute);
 }
 
@@ -655,7 +655,7 @@ body,
   border-top: 1px solid var(--border);
   background: var(--bg-panel-alt);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--type-legend);
   color: var(--ink-dim);
   flex-shrink: 0;
 }
@@ -698,7 +698,7 @@ body,
 
 .deck-index {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--type-label);
   font-weight: 600;
   padding: 2px 6px;
   border: 1px solid var(--accent);
@@ -716,7 +716,7 @@ body,
 }
 
 .deck-title {
-  font-size: 13.5px;
+  font-size: var(--type-reading);
   font-weight: 700;
   color: var(--ink);
   white-space: nowrap;
@@ -727,7 +727,7 @@ body,
 
 .deck-sub {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: var(--type-label);
   color: var(--ink-dim);
   white-space: nowrap;
   overflow: hidden;
@@ -756,7 +756,7 @@ body,
   border: none;
   border-bottom: 2px solid transparent;
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: var(--type-label);
   font-weight: 600;
   letter-spacing: 0.04em;
   color: var(--ink-dim);
@@ -816,12 +816,12 @@ body,
 }
 
 .empty-card-title {
-  font-size: 16px;
+  font-size: var(--type-title);
   font-weight: 700;
 }
 
 .empty-card-desc {
-  font-size: 12px;
+  font-size: var(--type-control);
   color: var(--ink-dim);
 }
 
@@ -846,7 +846,7 @@ body,
   border-bottom: 1px solid var(--border);
   background: var(--bg-panel-alt);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--type-legend);
   font-weight: 600;
   letter-spacing: 0.07em;
   color: var(--ink-dim);
@@ -887,7 +887,7 @@ body,
   background: var(--bg-panel-alt);
   color: var(--ink-dim);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--type-legend);
   cursor: pointer;
   transition: background var(--dur-press) var(--ease-detent), border-color var(--dur-press) var(--ease-detent);
 }
@@ -966,7 +966,7 @@ body,
   padding: 4px 10px;
   border-bottom: 1px solid var(--bg-screen-grid);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--type-legend);
   color: var(--screen-dim);
   letter-spacing: 0.06em;
   flex-shrink: 0;
@@ -1023,7 +1023,7 @@ body,
   border-top: 1px solid var(--bg-screen-grid);
   color: var(--screen-ink);
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: var(--type-legend);
   flex-shrink: 0;
 }
 
@@ -1037,7 +1037,7 @@ body,
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 9px;
+  font-size: var(--type-legend);
   color: var(--screen-dim);
 }
 
@@ -1056,7 +1056,7 @@ body,
 }
 
 .meter-ch-label {
-  font-size: 8.5px;
+  font-size: var(--type-legend);
   color: var(--screen-dim);
   line-height: 1;
 }
@@ -1095,7 +1095,7 @@ body,
 .meter-scale {
   position: relative;
   height: 10px;
-  font-size: 8px;
+  font-size: var(--type-legend);
   color: var(--screen-dim);
   line-height: 1;
   margin-top: 2px;
@@ -1176,7 +1176,7 @@ body,
   justify-content: center;
   color: #ffffff;
   font-family: var(--font-mono);
-  font-size: 8px;
+  font-size: var(--type-legend);
   font-weight: 700;
 }
 
@@ -1207,7 +1207,7 @@ body,
 
 .transport-hint {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--type-legend);
   color: var(--ink-mute);
 }
 
@@ -1235,7 +1235,7 @@ body,
 
 .io-label {
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: var(--type-legend);
   font-weight: 600;
   letter-spacing: 0.08em;
   color: var(--ink-dim);
@@ -1243,7 +1243,7 @@ body,
 
 .io-readout {
   font-family: var(--font-mono);
-  font-size: 14px;
+  font-size: var(--type-reading);
   font-weight: 600;
   color: var(--ink);
 }
@@ -1304,7 +1304,7 @@ body,
   padding: 20px 10px;
   text-align: center;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--type-label);
   color: var(--ink-mute);
 }
 
@@ -1333,7 +1333,7 @@ body,
 
 .lyric-time {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--type-legend);
   color: var(--ink-mute);
   flex-shrink: 0;
   padding-top: 2px;
@@ -1345,13 +1345,13 @@ body,
 }
 
 .lyric-orig {
-  font-size: 12px;
+  font-size: var(--type-control);
   color: var(--ink);
   word-break: break-word;
 }
 
 .lyric-trans {
-  font-size: 10.5px;
+  font-size: var(--type-label);
   color: var(--ink-dim);
   margin-top: 1px;
   word-break: break-word;
@@ -1409,7 +1409,7 @@ body,
 }
 
 .timing-snippet {
-  font-size: 11px;
+  font-size: var(--type-label);
   color: var(--ink-dim);
   white-space: nowrap;
   overflow: hidden;
@@ -1448,7 +1448,7 @@ body,
   background: transparent;
   color: var(--ink-dim);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--type-legend);
   font-weight: 500;
   padding: 4px 11px;
   cursor: pointer;
@@ -1548,7 +1548,7 @@ body,
   padding: 28px 16px;
   text-align: center;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--type-label);
   color: var(--ink-dim);
   display: flex;
   flex-direction: column;
@@ -1573,7 +1573,7 @@ body,
   justify-content: center;
   color: var(--screen-dim);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--type-legend);
 }
 
 .cand-thumb img {
@@ -1587,7 +1587,7 @@ body,
   position: absolute;
   padding: 2px 5px;
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: var(--type-legend);
   font-weight: 600;
   border-radius: var(--radius-control);
   background: var(--bg-screen);
@@ -1620,7 +1620,7 @@ body,
 }
 
 .cand-title {
-  font-size: 12px;
+  font-size: var(--type-control);
   font-weight: 600;
   color: var(--ink);
   display: -webkit-box;
@@ -1641,7 +1641,7 @@ body,
 
 .cand-uploader {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--type-legend);
   color: var(--ink-dim);
   white-space: nowrap;
   overflow: hidden;
@@ -1802,7 +1802,7 @@ body,
   align-items: center;
   justify-content: center;
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--type-legend);
   color: var(--screen-dim);
 }
 
@@ -1838,7 +1838,7 @@ body,
 
 .field-label {
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: var(--type-legend);
   font-weight: 600;
   letter-spacing: 0.06em;
   color: var(--ink-dim);
@@ -1879,7 +1879,7 @@ body,
   align-items: center;
   justify-content: center;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--type-legend);
   color: var(--screen-dim);
 }
 
@@ -1905,7 +1905,7 @@ body,
   border: 1px solid var(--border);
   border-radius: var(--radius-panel);
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: var(--type-label);
 }
 
 .telemetry-path {
@@ -1941,7 +1941,7 @@ body,
   justify-content: space-between;
   gap: 8px;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--type-legend);
   font-weight: 600;
   letter-spacing: 0.06em;
   color: var(--ink-dim);
@@ -1964,7 +1964,7 @@ body,
   background: var(--bg-ink);
   color: var(--ink-on-dark);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--type-legend);
   font-weight: 700;
   flex-shrink: 0;
 }
@@ -1999,7 +1999,7 @@ body,
   background: var(--btn-bg);
   color: var(--ink-dim);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--type-label);
   cursor: pointer;
   box-shadow: var(--shadow-control);
   transition: transform var(--dur-press) var(--ease-detent), background var(--dur-press) var(--ease-detent), border-color var(--dur-press) var(--ease-detent), box-shadow var(--dur-press) var(--ease-detent);
@@ -2032,7 +2032,7 @@ body,
 }
 
 .mod-key-code {
-  font-size: 9.5px;
+  font-size: var(--type-legend);
   color: var(--ink-mute);
   flex-shrink: 0;
 }
@@ -2115,7 +2115,7 @@ body,
   border-radius: var(--radius-panel);
   color: var(--ink);
   font-family: var(--font-sans);
-  font-size: 12px;
+  font-size: var(--type-control);
   padding: 5px 8px;
   outline: none;
 }
@@ -2135,12 +2135,12 @@ body,
 .te-input.mono,
 .te-textarea.mono {
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: var(--type-label);
 }
 
 input[type="file"].te-file {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--type-label);
   color: var(--ink-dim);
   max-width: 100%;
 }
@@ -2154,7 +2154,7 @@ input[type="file"].te-file::file-selector-button {
   background: var(--btn-bg);
   color: var(--ink);
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: var(--type-label);
   cursor: pointer;
   box-shadow: var(--shadow-control);
   transition: background var(--dur-quick) var(--ease-detent), border-color var(--dur-quick) var(--ease-detent);
@@ -2168,7 +2168,7 @@ input[type="file"].te-file::file-selector-button:hover {
 .drop-zone input[type="file"],
 .modal-body input[type="file"] {
   max-width: 100%;
-  font-size: 11px;
+  font-size: var(--type-label);
 }
 
 .console-wrap {
@@ -2189,7 +2189,7 @@ input[type="file"].te-file::file-selector-button:hover {
   padding: 8px 14px;
   border-bottom: 1px solid var(--bg-screen-grid);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--type-label);
   line-height: 1.55;
   word-break: break-all;
   overflow-wrap: anywhere;
@@ -2206,7 +2206,7 @@ input[type="file"].te-file::file-selector-button:hover {
   width: 100%;
   overflow: hidden;
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: var(--type-label);
 }
 
 .console-left {
@@ -2263,7 +2263,7 @@ input[type="file"].te-file::file-selector-button:hover {
   border: 1px solid var(--bg-screen-grid);
   color: var(--screen-ink);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--type-legend);
   padding: 2px 7px;
   border-radius: var(--radius-panel);
   cursor: pointer;
@@ -2307,7 +2307,7 @@ input[type="file"].te-file::file-selector-button:hover {
 
 .modal-title {
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: var(--type-label);
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -2353,10 +2353,11 @@ input[type="file"].te-file::file-selector-button:hover {
   width: 100%;
   max-width: 100%;
   overflow: hidden;
-  z-index: 25;
 }
 
 .toast {
+  position: relative;
+  z-index: 90;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2372,7 +2373,7 @@ input[type="file"].te-file::file-selector-button:hover {
   border-top: 1px solid var(--border-ink);
   box-shadow: inset 3px 0 0 var(--accent);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--type-label);
 }
 
 .toast.error {
@@ -2451,7 +2452,7 @@ input[type="file"].te-file::file-selector-button:hover {
   }
   .topbar .te-btn {
     padding: 0 7px;
-    font-size: 10.5px;
+    font-size: var(--type-label);
   }
 }
 
@@ -2527,7 +2528,7 @@ input[type="file"].te-file::file-selector-button:hover {
   }
   .tab-btn {
     padding: 0 8px;
-    font-size: 10px;
+    font-size: var(--type-legend);
   }
   .scrubber-box {
     padding: 6px 8px;
@@ -2589,7 +2590,7 @@ input[type="file"].te-file::file-selector-button:hover {
   }
   .topbar .te-btn {
     padding: 0 6px;
-    font-size: 10px;
+    font-size: var(--type-legend);
   }
   .deck-title {
     max-width: 120px;
@@ -2599,12 +2600,12 @@ input[type="file"].te-file::file-selector-button:hover {
   }
   .deck-bar-right {
     gap: 5px;
-    font-size: 10px;
+    font-size: var(--type-legend);
   }
   .meter-strip {
     gap: 6px;
     padding: 4px 8px;
-    font-size: 9px;
+    font-size: var(--type-legend);
   }
   .meter-status {
     gap: 5px;

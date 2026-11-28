@@ -4,7 +4,7 @@ import { fmtSec } from '../utils/time';
 import { RotaryKnob } from './ui/RotaryKnob';
 import { TactileButton } from './ui/TactileButton';
 
-export function LyricsPanel() {
+export function LyricsPanel({ onPreviewSeek }: { onPreviewSeek?: (seconds: number) => void }) {
   const {
     activeSong,
     lyricsLines,
@@ -22,15 +22,17 @@ export function LyricsPanel() {
   const offset = Number(activeSong?.lyrics_offset) || 0;
   const offsetStr = `${offset >= 0 ? '+' : ''}${offset.toFixed(1)}s`;
 
+  const follow = isPlaying || onPreviewSeek !== undefined;
+
   useEffect(() => {
-    if (!isPlaying || activeLyricIdx < 0) return;
+    if (!follow || activeLyricIdx < 0) return;
     const container = scrollRef.current;
     if (!container) return;
     const row = container.querySelector(`[data-lyric-idx="${activeLyricIdx}"]`);
     if (row) {
       row.scrollIntoView({ block: 'center', behavior: 'smooth' });
     }
-  }, [activeLyricIdx, isPlaying]);
+  }, [activeLyricIdx, follow]);
 
   return (
     <section className="panel-box lyrics-col" data-testid="lyrics-panel">
@@ -99,7 +101,7 @@ export function LyricsPanel() {
                 data-lyric-idx={lIdx}
                 data-active={isActive ? 'true' : 'false'}
                 className={isActive ? 'lyric-row active' : 'lyric-row'}
-                onClick={() => seekTo(Math.max(0, (ln.time || 0) + offset))}
+                onClick={() => (onPreviewSeek ?? seekTo)(Math.max(0, (ln.time || 0) + offset))}
               >
                 <span className="lyric-time">{fmtSec(ln.time || 0)}</span>
                 <div className="lyric-text">

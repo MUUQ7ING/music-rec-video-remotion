@@ -1,3 +1,4 @@
+import { TactileButton } from './TactileButton';
 import type { ReactNode } from 'react';
 
 export type LedTone = 'green' | 'amber' | 'blue' | 'orange' | 'red' | 'off';
@@ -25,9 +26,9 @@ export function OLEDDisplay({ title, children }: { title: string; children: Reac
 
 export function HardwareSwitch({ label, on, onChange }: { label: string; on: boolean; onChange: (on: boolean) => void }) {
   return (
-    <button className="hardware-switch hardware-label" type="button" role="switch" aria-checked={on} onClick={() => onChange(!on)}>
+    <TactileButton customLayout className="hardware-switch hardware-label" type="button" role="switch" aria-checked={on} onClick={() => onChange(!on)}>
       {label}<span className="switch-track" aria-hidden="true"><i /></span>
-    </button>
+    </TactileButton>
   );
 }
 

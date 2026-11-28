@@ -1,19 +1,26 @@
 import { useLayoutEffect, useRef } from 'react';
 
-export function ColumnDivider({ side }: { side: 'rack' | 'editor' }) {
+const columns = {
+  rack: { container: '.workspace', panel: '.rack', label: '调整曲目栏宽度' },
+  editor: { container: '.trim-grid', panel: '.side-stack', label: '调整歌词文案栏宽度' },
+  sequence: { container: '.full-edit', panel: '.full-inspector', label: '调整全片编辑右栏宽度' },
+};
+
+export function ColumnDivider({ side }: { side: keyof typeof columns }) {
   const ref = useRef<HTMLDivElement>(null);
   const drag = useRef<{ x: number; width: number } | null>(null);
   const key = `mrv_column_${side}`;
   const variable = `--${side}-width`;
-  const container = () => ref.current?.closest<HTMLElement>(side === 'rack' ? '.workspace' : '.trim-grid');
-  const panelWidth = () => container()?.querySelector(side === 'rack' ? '.rack' : '.side-stack')?.getBoundingClientRect().width ?? 0;
+  const column = columns[side];
+  const container = () => ref.current?.closest<HTMLElement>(column.container);
+  const panelWidth = () => container()?.querySelector(column.panel)?.getBoundingClientRect().width ?? 0;
   const direction = side === 'rack' ? 1 : -1;
 
   useLayoutEffect(() => {
-    const panel = ref.current?.closest<HTMLElement>(side === 'rack' ? '.workspace' : '.trim-grid');
+    const panel = ref.current?.closest<HTMLElement>(column.container);
     const saved = Number(localStorage.getItem(key));
     if (saved > 0) panel?.style.setProperty(variable, `${saved}px`);
-  }, [key, side, variable]);
+  }, [key, column, variable]);
 
   const resize = (width: number) => {
     const parent = container();
@@ -30,7 +37,7 @@ export function ColumnDivider({ side }: { side: 'rack' | 'editor' }) {
       className={`column-divider column-divider-${side}`}
       role="separator"
       aria-orientation="vertical"
-      aria-label={side === 'rack' ? '调整曲目栏宽度' : '调整歌词文案栏宽度'}
+      aria-label={column.label}
       title="拖动或用方向键调整宽度，双击恢复"
       tabIndex={0}
       onPointerDown={event => {
